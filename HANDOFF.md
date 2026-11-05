@@ -159,6 +159,33 @@ Option B: edit `public/config.js`, then commit and push (needed anyway for Netli
 
 ## 4. Live smoke test (after 3.2–3.6)
 
+**Flexibility update + booking/payment test, 5 Nov 2026.**
+
+New, for when Vivek needs to step in by hand:
+- **Charges and discounts.** Billing → Charge / discount, also on each student. Discounts are bills with a negative amount (`invoices.kind = 'adjustment'`).
+- **Edit a bill** (title, amount, due date). **Edit a payment** (amount, date, method, which bill, status).
+- **Change the amount when confirming** a parent's "I have paid".
+- **Charge a missed or late-cancelled class** (full or part), from the class pop-up.
+- **Monthly plans**: give a class its own fee and it's billed on top of the monthly fee.
+- **General payments and discounts settle the oldest bills first**: `invoice_summary.paid_amount`, while `paid_direct` keeps only payments against that bill.
+- **Parents can ask to move a class** (`request_reschedule`). Approving cancels the old class and reopens its slot.
+- **Teacher can book an open slot for a student**, without the notice rule. **Cancelling** has a "let families book this time again" choice.
+- **Class form**: overlap warning, and a note when the class is already billed. **Requests**: more durations. **Create bills**: Last month / This month buttons. **Parents can withdraw** an unchecked payment report.
+- **Fixed**: booking a slot no longer freezes the fee, so changing the length changes the price.
+
+How it was tested:
+- **Parent side**: run in the SQL editor *as* vivek19871987@gmail.com (`set local role authenticated` + JWT claims), so the real functions and security rules applied; the browser pane wasn't available.
+- **Teacher side**: clicked in Chrome as vivek787r.
+- All passed:
+  - Booking: a booking 2.4 h ahead was refused; tomorrow booked with the fee left automatic.
+  - Moving: the move request was approved by the teacher and the old class cancelled with its slot reopened; a second move request was refused.
+  - Cancelling: the parent's early cancel reopened the slot; a cancel 3 h ahead was refused.
+  - Payments: a report was withdrawn; the parent couldn't confirm their own payment or delete a confirmed one.
+  - Teacher: confirmed a ₹700 report as ₹600, booked for a student inside the notice period, cancelled without reopening, charged a late cancellation (₹300) and a missed class (₹600).
+  - Fees and bills: stretched a booked class to 90 min (fee ₹600 → ₹900); overlap warning; monthly fee + extra class billed together (₹2,900); discount −₹200; edited a bill and a payment.
+  - Bills settled from credit, and the parent's bills and balances agree.
+- Test data removed afterwards.
+
 **Teacher-button test, 5 Nov 2026, signed in as vivek787r@gmail.com in Chrome:** every teacher feature was clicked through with TEST data, and all data was removed afterwards.
 - Settings: save, reload, revert; the admin list is shown to admins only.
 - Notices: post, pin, unpin, delete.
