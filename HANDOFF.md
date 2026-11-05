@@ -23,7 +23,7 @@ _Last updated: 5 Nov 2026. Written for **you and the Claude session on your own 
 | SMTP | ✅ Gmail `smtp.gmail.com:587` as vivek787r@gmail.com (app password, 500/day). Codes land in Inbox. |
 | Keys wired into the app | ✅ `public/config.js` (URL + `sb_publishable_…` key; no secret key anywhere). Keep-alive reads the same file. |
 | Admins | ✅ saurabh19891989@gmail.com, vivek787r@gmail.com (`app_settings.admin_emails`) |
-| GitHub Pages | ✅ Deploys from `main` via Actions. Custom domain set (`public/CNAME`). Tick **Enforce HTTPS** once GitHub has issued the certificate. |
+| GitHub Pages | ✅ Deploys from `main` via Actions. Custom domain set (`public/CNAME`), DNS check passed, certificate issued, **Enforce HTTPS** on. github.io redirects to the domain. |
 | Domain | ✅ `shikshagram.dpdns.org`: DigitalPlat (Vivek's account, verified via GitHub, renews free within 120 days of 5 Nov 2027) → nameservers `aragorn`/`jessica.ns.cloudflare.com` → Cloudflare Free (vivek787r@gmail.com), records in `docs/dns/shikshagram.dpdns.org.zone`, all **DNS only**. |
 | Admin login on the live site | ✅ Email code → teacher panel. |
 | Local copy | ✅ `C:\Users\saura\Downloads\Sikshagram` (a git clone, so `git pull` keeps it current) |
@@ -47,7 +47,7 @@ _Last updated: 5 Nov 2026. Written for **you and the Claude session on your own 
 
 ## 3. Setup tasks: all done except where noted
 
-> Sections 3.1–3.7 are kept as a record of how it was set up. **Still open:** tick *Enforce HTTPS* in repo Settings → Pages once the certificate exists, and everything in 3.8 (real settings and students).
+> Sections 3.1–3.7 are kept as a record of how it was set up. **Still open:** everything in 3.8 (real settings and students), and the parent-side checks in §4.
 
 
 ### 3.1 Get the code locally, including a copy in Downloads
