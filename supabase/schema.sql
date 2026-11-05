@@ -83,7 +83,7 @@ create table if not exists public.invoices (
   title        text not null,
   period_start date,
   period_end   date,
-  amount       numeric(10, 2) not null check (amount >= 0),
+  amount       numeric(10, 2) not null, -- negative = discount / credit
   due_date     date,
   status       text not null default 'issued' check (status in ('issued', 'void')),
   notes        text,
@@ -160,6 +160,14 @@ create table if not exists public.announcements (
 -- Columns added after the first version (harmless on a fresh install)
 alter table public.students add column if not exists hourly_rate numeric(10, 2) not null default 0;
 alter table public.classes  add column if not exists is_trial boolean not null default false;
+-- a family's "please move this class" request points at the class it replaces
+alter table public.classes  add column if not exists replaces_class uuid references public.classes (id) on delete set null;
+-- what made a bill: classes / monthly fee / typed by hand / charge or discount
+alter table public.invoices add column if not exists kind text not null default 'manual';
+alter table public.invoices drop constraint if exists invoices_kind_check;
+alter table public.invoices add constraint invoices_kind_check check (kind in ('classes', 'monthly', 'manual', 'adjustment'));
+-- discounts are bills with a negative amount
+alter table public.invoices drop constraint if exists invoices_amount_check;
 
 -- =====================================================================
 --  Helper functions
@@ -309,12 +317,10 @@ begin
     raise exception 'This slot is only available for % classes', v_slot.mode;
   end if;
 
-  insert into public.classes (student_id, start_at, end_at, mode, status, request_note, meeting_link, fee, requested_by)
+  -- fee stays empty (= worked out from the plan), so changing the class length later changes the fee
+  insert into public.classes (student_id, start_at, end_at, mode, status, request_note, meeting_link, requested_by)
   values (p_student, v_slot.start_at, v_slot.end_at, v_mode, 'scheduled', p_note,
           case when v_mode = 'online' then v_student.meeting_link end,
-          case when v_student.billing_type = 'monthly' then null
-               else public.class_amount(null, false, v_slot.start_at, v_slot.end_at, v_student.billing_type,
-                                        v_student.fee_per_class, v_student.hourly_rate) end,
           auth.uid())
   returning id into v_class;
 
@@ -343,8 +349,40 @@ begin
 end;
 $$;
 
--- Cancel an upcoming class (students/parents need enough notice)
-create or replace function public.cancel_class(p_class uuid, p_reason text default null)
+-- Ask to move a booked class to another time (teacher approves; the old class is then cancelled)
+create or replace function public.request_reschedule(p_class uuid, p_start timestamptz, p_end timestamptz, p_note text default null)
+returns uuid
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_old public.classes;
+  v_new uuid;
+begin
+  select * into v_old from public.classes where id = p_class;
+  if not found then raise exception 'Class not found'; end if;
+  if not (public.is_admin() or v_old.student_id in (select public.my_student_ids())) then
+    raise exception 'Not allowed';
+  end if;
+  if v_old.status <> 'scheduled' then raise exception 'Only booked classes can be moved'; end if;
+  if p_start < now() then raise exception 'Please pick a future time'; end if;
+  if p_end <= p_start then raise exception 'The class must end after it starts'; end if;
+  if exists (select 1 from public.classes where replaces_class = p_class and status = 'requested') then
+    raise exception 'You already asked to move this class. Wait for the teacher, or withdraw that request first.';
+  end if;
+
+  insert into public.classes (student_id, start_at, end_at, mode, status, subject, request_note, meeting_link,
+                              is_trial, fee, requested_by, replaces_class)
+  values (v_old.student_id, p_start, p_end, v_old.mode, 'requested', v_old.subject, p_note, v_old.meeting_link,
+          v_old.is_trial, v_old.fee, auth.uid(), p_class)
+  returning id into v_new;
+  return v_new;
+end;
+$$;
+
+-- Cancel an upcoming class (students/parents need enough notice).
+-- p_reopen: put a booked slot back on the calendar for others (the teacher may say no, e.g. when ill).
+drop function if exists public.cancel_class(uuid, text);
+create or replace function public.cancel_class(p_class uuid, p_reason text default null, p_reopen boolean default true)
 returns void
 language plpgsql security definer set search_path = public
 as $$
@@ -368,7 +406,11 @@ begin
   end if;
 
   update public.classes set status = 'cancelled', cancel_reason = p_reason where id = p_class;
-  update public.slots set class_id = null where class_id = p_class;
+  if p_reopen or not public.is_admin() then
+    update public.slots set class_id = null where class_id = p_class;
+  else
+    delete from public.slots where class_id = p_class;
+  end if;
 end;
 $$;
 
@@ -377,8 +419,8 @@ $$;
 -- =====================================================================
 
 -- Create a bill for one student for a period.
---   per_class students: sums completed, not-yet-billed classes in the period
---   monthly students:   uses the monthly fee
+--   per-hour / per-class students: completed, not-yet-billed classes in the period
+--   monthly students: the monthly fee (once per period) + any extra classes that were given their own fee
 create or replace function public.generate_invoice(p_student uuid, p_start date, p_end date, p_due date default null)
 returns uuid
 language plpgsql security definer set search_path = public
@@ -390,21 +432,43 @@ declare
   v_inv     uuid;
   v_title   text;
   v_hours   numeric;
+  v_extra   numeric(10, 2);
+  v_monthly boolean := false;
 begin
   if not public.is_admin() then raise exception 'Teacher only'; end if;
   select * into v_student from public.students where id = p_student;
   if not found then raise exception 'Student not found'; end if;
 
   if v_student.billing_type = 'monthly' then
-    -- never bill the same period twice
-    if exists (select 1 from public.invoices i
-                where i.student_id = p_student and i.status = 'issued'
-                  and daterange(i.period_start, i.period_end, '[]') && daterange(p_start, p_end, '[]')) then
-      return null;
+    v_amount := 0;
+    -- the monthly fee, unless this period already has one (never bill a month twice)
+    if not exists (select 1 from public.invoices i
+                    where i.student_id = p_student and i.status = 'issued' and i.kind = 'monthly'
+                      and daterange(i.period_start, i.period_end, '[]') && daterange(p_start, p_end, '[]')) then
+      v_monthly := true;
+      v_amount  := coalesce(v_student.monthly_fee, 0);
+      v_title   := 'Monthly fee ' || to_char(p_start, 'Mon YYYY');
     end if;
-    v_amount := v_student.monthly_fee;
-    v_title  := 'Monthly fee ' || to_char(p_start, 'Mon YYYY');
-    v_count  := 0;
+    -- extra classes the teacher gave a fee to
+    select count(*), coalesce(sum(fee), 0) into v_count, v_extra
+      from public.classes
+     where student_id = p_student and status = 'completed' and invoice_id is null
+       and fee is not null and not is_trial and start_at::date between p_start and p_end;
+    if not v_monthly and v_count = 0 then return null; end if;
+    v_amount := v_amount + v_extra;
+    if v_count > 0 then
+      v_title := coalesce(v_title || ' + ', '') || v_count || ' extra class' || case when v_count = 1 then '' else 'es' end
+                 || case when v_monthly then '' else ' (' || to_char(p_start, 'DD Mon') || ' – ' || to_char(p_end, 'DD Mon YYYY') || ')' end;
+    end if;
+
+    insert into public.invoices (student_id, title, period_start, period_end, amount, due_date, kind)
+    values (p_student, v_title, p_start, p_end, v_amount, coalesce(p_due, p_end + 7),
+            case when v_monthly then 'monthly' else 'classes' end)
+    returning id into v_inv;
+    update public.classes set invoice_id = v_inv
+     where student_id = p_student and status = 'completed' and invoice_id is null
+       and fee is not null and not is_trial and start_at::date between p_start and p_end;
+    return v_inv;
   else
     select count(*),
            coalesce(sum(public.class_amount(fee, is_trial, start_at, end_at, v_student.billing_type,
@@ -420,15 +484,13 @@ begin
                || ' (' || to_char(p_start, 'DD Mon') || ' – ' || to_char(p_end, 'DD Mon YYYY') || ')';
   end if;
 
-  insert into public.invoices (student_id, title, period_start, period_end, amount, due_date)
-  values (p_student, v_title, p_start, p_end, v_amount, coalesce(p_due, p_end + 7))
+  insert into public.invoices (student_id, title, period_start, period_end, amount, due_date, kind)
+  values (p_student, v_title, p_start, p_end, v_amount, coalesce(p_due, p_end + 7), 'classes')
   returning id into v_inv;
 
-  if v_student.billing_type <> 'monthly' then
-    update public.classes set invoice_id = v_inv
-     where student_id = p_student and status = 'completed' and invoice_id is null
-       and start_at::date between p_start and p_end;
-  end if;
+  update public.classes set invoice_id = v_inv
+   where student_id = p_student and status = 'completed' and invoice_id is null
+     and start_at::date between p_start and p_end;
   return v_inv;
 end;
 $$;
@@ -449,7 +511,8 @@ $$;
 -- =====================================================================
 --  Views (respect the caller's row-level security)
 -- =====================================================================
-create or replace view public.invoice_summary
+drop view if exists public.invoice_summary; -- recreated: its i.* columns change when invoices gains columns
+create view public.invoice_summary
 with (security_invoker = true) as
 select i.*,
        s.full_name as student_name,
@@ -473,7 +536,8 @@ select s.id as student_id,
                                                  s.fee_per_class, s.hourly_rate))
                   from public.classes c
                   where c.student_id = s.id and c.status = 'completed' and c.invoice_id is null
-                    and s.billing_type <> 'monthly'), 0) as unbilled
+                    -- monthly plans: only extra classes that were given their own fee
+                    and (s.billing_type <> 'monthly' or (c.fee is not null and not c.is_trial))), 0) as unbilled
 from public.students s;
 
 -- Admin list for the Settings page (admins only; others can't read the column)
@@ -555,6 +619,9 @@ create policy payments_submit on public.payments for insert to authenticated
               or (student_id in (select public.my_student_ids()) and status = 'pending' and submitted_by = auth.uid()));
 create policy payments_admin  on public.payments for all to authenticated
   using (public.is_admin()) with check (public.is_admin());
+-- families can take back their own "I have paid" report while it is still unchecked
+create policy payments_withdraw on public.payments for delete to authenticated
+  using (status = 'pending' and submitted_by = auth.uid());
 
 -- announcements
 create policy notices_read  on public.announcements for select to authenticated using (true);
@@ -582,7 +649,8 @@ grant execute on function public.is_admin(), public.my_student_ids(),
   public.class_amount(numeric, boolean, timestamptz, timestamptz, text, numeric, numeric),
   public.book_slot(uuid, uuid, text, text),
   public.request_class(uuid, timestamptz, timestamptz, text, text),
-  public.cancel_class(uuid, text),
+  public.cancel_class(uuid, text, boolean),
+  public.request_reschedule(uuid, timestamptz, timestamptz, text),
   public.generate_invoice(uuid, date, date, date),
   public.link_member(uuid, uuid, text),
   public.get_admin_emails()
