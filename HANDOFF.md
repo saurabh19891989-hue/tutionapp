@@ -170,7 +170,7 @@ Option B: edit `public/config.js`, then commit and push (needed anyway for Netli
 - RLS from the parent login: can't add students (403), can't make itself a teacher (403), can't confirm its own payment (0 rows), sees only its own student.
 - Teacher-side writes in this run (settings, student, slots, confirm) were done in the SQL editor, because Chrome held the parent session.
 - Known minor issue: any signed-in user can read `app_settings.admin_emails`.
-- Test rows are named/tagged `TEST`. Remove them with:
+- Test rows were removed right after the test, leaving 0 students/classes/payments/slots/links. The login vivek19871987@gmail.com (parent) still exists. For future test runs, tag rows `TEST` and remove them with:
   ```sql
   delete from public.slots where note = 'TEST slot';
   delete from public.students where full_name = 'TEST Student (delete me)';  -- cascades classes, payments, links
