@@ -416,7 +416,7 @@ begin
        and start_at::date between p_start and p_end;
     if v_count = 0 then return null; end if;
     v_title := v_count || ' class' || case when v_count = 1 then '' else 'es' end
-               || ' · ' || trim(to_char(v_hours, 'FM9990.##')) || ' hrs'
+               || ' · ' || rtrim(to_char(v_hours, 'FM9990.99'), '.') || ' hrs'
                || ' (' || to_char(p_start, 'DD Mon') || ' – ' || to_char(p_end, 'DD Mon YYYY') || ')';
   end if;
 

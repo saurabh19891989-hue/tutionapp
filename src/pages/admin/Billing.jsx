@@ -21,12 +21,24 @@ export function RecordPaymentModal({ open, onClose, studentId, onSaved }) {
   useEffect(() => {
     if (open) setF({ student_id: studentId || students[0]?.id || '', amount: '', method: 'cash', reference: '', paid_on: ymd(new Date()), invoice_id: '', note: '' })
   }, [open, studentId, students])
+  const left = (i) => Number(i.amount) - Number(i.paid_amount)
   useEffect(() => {
     if (!open || !f.student_id) return
-    supabase.from('invoice_summary').select('*').eq('student_id', f.student_id).eq('status', 'issued').order('created_at', { ascending: false })
-      .then(({ data }) => setInvoices((data || []).filter((i) => Number(i.paid_amount) < Number(i.amount))))
+    supabase.from('invoice_summary').select('*').eq('student_id', f.student_id).eq('status', 'issued').order('created_at', { ascending: true })
+      .then(({ data }) => {
+        const unpaid = (data || []).filter((i) => left(i) > 0)
+        setInvoices(unpaid)
+        // default to the oldest unpaid bill and what's left on it, unless the teacher already chose
+        const first = unpaid[0]
+        if (first) setF((x) => (x.invoice_id || x.amount ? x : { ...x, invoice_id: first.id, amount: String(left(first)) }))
+      })
   }, [open, f.student_id])
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }))
+  const pickStudent = (e) => setF((x) => ({ ...x, student_id: e.target.value, invoice_id: '', amount: '' }))
+  const pickBill = (e) => {
+    const inv = invoices.find((i) => i.id === e.target.value)
+    setF((x) => ({ ...x, invoice_id: e.target.value, amount: x.amount || (inv ? String(left(inv)) : '') }))
+  }
   async function save() {
     const ok = await run(() => supabase.from('payments').insert({
       student_id: f.student_id, amount: Number(f.amount), method: f.method, reference: f.reference || null,
@@ -39,7 +51,7 @@ export function RecordPaymentModal({ open, onClose, studentId, onSaved }) {
       footer={<><button className="btn-ghost" onClick={onClose}>Close</button><button className="btn-success" disabled={busy || !(Number(f.amount) > 0) || !f.student_id} onClick={save}>{busy && <Spinner />} Save payment</button></>}>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Student" className="col-span-2">
-          <select className="input" value={f.student_id} onChange={set('student_id')} disabled={!!studentId}>
+          <select className="input" value={f.student_id} onChange={pickStudent} disabled={!!studentId}>
             {students.map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
           </select>
         </Field>
@@ -52,9 +64,9 @@ export function RecordPaymentModal({ open, onClose, studentId, onSaved }) {
         </Field>
         <Field label="Reference"><input className="input" value={f.reference} onChange={set('reference')} placeholder="optional" /></Field>
         <Field label="Against bill" className="col-span-2" hint="Leave as advance if paying ahead for upcoming classes.">
-          <select className="input" value={f.invoice_id} onChange={set('invoice_id')}>
+          <select className="input" value={f.invoice_id} onChange={pickBill}>
             <option value="">General / advance payment</option>
-            {invoices.map((i) => <option key={i.id} value={i.id}>#{i.invoice_no} · {i.title} · {money(Number(i.amount) - Number(i.paid_amount))} left</option>)}
+            {invoices.map((i) => <option key={i.id} value={i.id}>#{i.invoice_no} · {i.title} · {money(left(i))} left</option>)}
           </select>
         </Field>
         <Field label="Note" className="col-span-2"><input className="input" value={f.note} onChange={set('note')} placeholder="e.g. advance for 8 classes" /></Field>
