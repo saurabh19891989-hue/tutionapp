@@ -476,6 +476,19 @@ select s.id as student_id,
                     and s.billing_type <> 'monthly'), 0) as unbilled
 from public.students s;
 
+-- Admin list for the Settings page (admins only; others can't read the column)
+create or replace function public.get_admin_emails()
+returns text[]
+language plpgsql stable security definer set search_path = public
+as $$
+begin
+  if not public.is_admin() then
+    raise exception 'Only admins can see the admin list';
+  end if;
+  return (select admin_emails from public.app_settings where id = 1);
+end;
+$$;
+
 -- =====================================================================
 --  Row-level security
 -- =====================================================================
@@ -557,6 +570,12 @@ grant select, insert, update, delete on all tables in schema public to authentic
 -- profiles: users may only change their name/phone, never email or account type
 revoke update on public.profiles from authenticated;
 grant update (full_name, phone) on public.profiles to authenticated;
+-- app_settings: everyone signed in reads the public columns; the admin list
+-- is only readable by admins through get_admin_emails() (updates stay admin-only via RLS)
+revoke select on public.app_settings from authenticated;
+grant select (id, brand_name, teacher_name, phone, contact_email, upi_id, upi_payee_name,
+              default_class_minutes, booking_notice_hours, cancel_notice_hours, updated_at)
+  on public.app_settings to authenticated;
 
 revoke execute on all functions in schema public from public, anon;
 grant execute on function public.is_admin(), public.my_student_ids(),
@@ -565,5 +584,6 @@ grant execute on function public.is_admin(), public.my_student_ids(),
   public.request_class(uuid, timestamptz, timestamptz, text, text),
   public.cancel_class(uuid, text),
   public.generate_invoice(uuid, date, date, date),
-  public.link_member(uuid, uuid, text)
+  public.link_member(uuid, uuid, text),
+  public.get_admin_emails()
   to authenticated;

@@ -13,22 +13,29 @@ export default function SettingsPage() {
   const toast = useToast()
   const appUrl = window.location.origin + window.location.pathname
 
-  useEffect(() => { if (settings) setF({ ...settings, admin_emails: (settings.admin_emails || []).join(', ') }) }, [settings])
+  const [admins, setAdmins] = useState(null)
+  useEffect(() => { if (settings) setF({ ...settings }) }, [settings])
+  useEffect(() => {
+    supabase.rpc('get_admin_emails').then(({ data, error }) => {
+      if (error) toast(error.message, 'error')
+      else setAdmins((data || []).join(', '))
+    })
+  }, [toast])
   useEffect(() => {
     supabase.from('profiles').select('id, email, full_name, phone, account_type, created_at, student_members(relation, students(full_name))').order('created_at', { ascending: false })
       .then(({ data }) => setPeople(data || []))
   }, [])
-  if (!f) return null
+  if (!f || admins === null) return null
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }))
 
   async function save() {
-    const admins = f.admin_emails.split(/[,\s]+/).map((x) => x.trim().toLowerCase()).filter(Boolean)
-    if (!admins.length) return toast('Keep at least one admin email.', 'error')
+    const adminList = admins.split(/[,\s]+/).map((x) => x.trim().toLowerCase()).filter(Boolean)
+    if (!adminList.length) return toast('Keep at least one admin email.', 'error')
     const ok = await run(() => supabase.from('app_settings').update({
       brand_name: f.brand_name, teacher_name: f.teacher_name, phone: f.phone || null, contact_email: f.contact_email || null,
       upi_id: f.upi_id?.trim() || null, upi_payee_name: f.upi_payee_name || null,
       default_class_minutes: Number(f.default_class_minutes) || 60, booking_notice_hours: Number(f.booking_notice_hours) || 0,
-      cancel_notice_hours: Number(f.cancel_notice_hours) || 0, admin_emails: admins, updated_at: new Date().toISOString(),
+      cancel_notice_hours: Number(f.cancel_notice_hours) || 0, admin_emails: adminList, updated_at: new Date().toISOString(),
     }).eq('id', 1), 'Settings saved')
     if (ok) refresh()
   }
@@ -79,7 +86,7 @@ export default function SettingsPage() {
         <Card className="space-y-3 p-4 lg:col-span-2">
           <h2 className="text-lg font-extrabold">Admins</h2>
           <Field label="Emails with teacher/admin access" hint="Comma separated. Add Vivek’s email here — on his next sign-in he gets this panel.">
-            <input className="input" value={f.admin_emails} onChange={set('admin_emails')} />
+            <input className="input" value={admins} onChange={(e) => setAdmins(e.target.value)} />
           </Field>
         </Card>
 

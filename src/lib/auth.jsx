@@ -5,6 +5,9 @@ const AuthCtx = createContext(null)
 export const useAuth = () => useContext(AuthCtx)
 
 const ACTIVE_STUDENT_KEY = 'vct-active-student'
+// admin_emails is not readable by regular users (column grant); admins load it via get_admin_emails()
+const SETTINGS_COLUMNS =
+  'id, brand_name, teacher_name, phone, contact_email, upi_id, upi_payee_name, default_class_minutes, booking_notice_hours, cancel_notice_hours, updated_at'
 
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(undefined) // undefined = still loading
@@ -49,7 +52,7 @@ export function AuthProvider({ children }) {
     const uid = session.user.id
     const [p, s, a, st] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', uid).maybeSingle(),
-      supabase.from('app_settings').select('*').eq('id', 1).maybeSingle(),
+      supabase.from('app_settings').select(SETTINGS_COLUMNS).eq('id', 1).maybeSingle(),
       supabase.rpc('is_admin'),
       supabase.from('students').select('*').eq('active', true).order('full_name'),
     ])
