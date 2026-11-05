@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Plus, Users, Search, Phone, MapPin, Mail, Link2, Unlink, Pencil, IndianRupee, ReceiptText, MessageCircle } from 'lucide-react'
+import { Plus, Users, Search, Phone, MapPin, Mail, Link2, Unlink, Pencil, IndianRupee, ReceiptText, MessageCircle, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../lib/auth'
 import { Badge, Card, Empty, Field, Loading, Modal, PageHeader, Spinner, useAction } from '../../components/ui'
@@ -15,14 +15,20 @@ const EMPTY = {
 export function StudentFormModal({ open, onClose, initial, onSaved }) {
   const [f, setF] = useState(EMPTY)
   const [run, busy] = useAction()
-  useEffect(() => { if (open) setF({ ...EMPTY, ...(initial || {}) }) }, [open, initial])
+  useEffect(() => {
+    if (!open) return
+    // saved rows have nulls for blank fields; keep the form's '' defaults for those
+    const next = { ...EMPTY }
+    for (const [k, v] of Object.entries(initial || {})) if (v !== null && v !== undefined) next[k] = v
+    setF(next)
+  }, [open, initial])
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
 
   async function save() {
     const row = {
-      full_name: f.full_name.trim(), grade: f.grade || null, school: f.school || null, subjects: f.subjects || null,
-      student_email: f.student_email.trim().toLowerCase() || null, parent_name: f.parent_name || null,
-      parent_email: f.parent_email.trim().toLowerCase() || null, phone: f.phone || null, address: f.address || null,
+      full_name: (f.full_name || '').trim(), grade: f.grade || null, school: f.school || null, subjects: f.subjects || null,
+      student_email: (f.student_email || '').trim().toLowerCase() || null, parent_name: f.parent_name || null,
+      parent_email: (f.parent_email || '').trim().toLowerCase() || null, phone: f.phone || null, address: f.address || null,
       default_mode: f.default_mode, billing_type: f.billing_type,
       hourly_rate: Number(f.hourly_rate) || 0, fee_per_class: Number(f.fee_per_class) || 0, monthly_fee: Number(f.monthly_fee) || 0,
       meeting_link: f.meeting_link || null, notes: f.notes || null, active: !!f.active,
@@ -33,9 +39,16 @@ export function StudentFormModal({ open, onClose, initial, onSaved }) {
     if (ok) { onSaved?.(); onClose() }
   }
 
+  async function remove() {
+    if (!confirm(`Delete ${initial.full_name} permanently, with all their classes, bills and payments?\n\nTo keep their history, untick “Active student” instead.`)) return
+    const ok = await run(() => supabase.from('students').delete().eq('id', initial.id), 'Student deleted')
+    if (ok) { onSaved?.(); onClose() }
+  }
+
   return (
     <Modal open={open} onClose={onClose} wide title={initial?.id ? `Edit ${initial.full_name}` : 'Add a student'}
-      footer={<><button className="btn-ghost" onClick={onClose}>Close</button><button className="btn-primary" disabled={busy || !f.full_name.trim()} onClick={save}>{busy && <Spinner />} Save</button></>}>
+      footer={<>{initial?.id && <button className="btn-danger mr-auto" disabled={busy} onClick={remove}><Trash2 size={16} /> Delete</button>}
+        <button className="btn-ghost" onClick={onClose}>Close</button><button className="btn-primary" disabled={busy || !(f.full_name || '').trim()} onClick={save}>{busy && <Spinner />} Save</button></>}>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Student name *"><input className="input" value={f.full_name} onChange={set('full_name')} autoFocus /></Field>
         <Field label="Class / grade"><input className="input" value={f.grade || ''} onChange={set('grade')} placeholder="e.g. 8" /></Field>
