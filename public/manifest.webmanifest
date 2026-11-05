@@ -1,0 +1,9 @@
+{
+  "name": "ShikshaGram Home Classes",
+  "short_name": "ShikshaGram",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f6f9fe",
+  "theme_color": "#eef6ff",
+  "icons": [{ "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
