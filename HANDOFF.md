@@ -226,6 +226,18 @@ Not changed, by design:
   ```
 - `app_settings.upi_id` is a placeholder (`dummy.replace-later@invalid`): replace it in Settings before sharing with families.
 
+**Parent click-through, 5 Nov 2026 (Chrome, signed in as vivek19871987@gmail.com):** all passed after the fixes below.
+- Home shows the right balance: ₹1,200 bill − ₹200 discount + ₹600 unbilled − ₹500 paid = ₹1,100.
+- Book: booking a slot works, including the Home/Online choice and a note. A slot inside the 6 h notice now shows **Call to book** instead of a Book button that always failed.
+- Ask to change the time: the request is sent, a second request is refused, and the parent can withdraw it ("Yes, withdraw"). The original class now says "You asked to move this to …" and hides the button.
+- Request a time: works (2 h, own message).
+- Cancel: early cancel reopens the slot. A class inside the 6 h notice now shows "Too close to the class to cancel online" with **Call Vivek Choudhary** instead of a Cancel button.
+- Fees: the discount bill and the part-paid bill (paid ₹700 = ₹500 cash + ₹200 discount) are right. Pay fills in what's left (₹500), and Pay now fills in the balance (₹1,100). "I have paid" then Withdraw works.
+- Phones (360–390 px): the fees card now sits right under the next class. Page grids no longer widen to fit the payment table, and the table fits (Withdraw sits next to the status).
+- Also fixed: the welcome screen's WhatsApp button now adds the 91 country code, and online classes without a link say the link will appear there.
+- Not clicked: the teacher-side "The family asked to move this to …" line (same code path as the parent line).
+- Test rows (student `TEST Aarav`, slots noted `TEST…`) were removed afterwards, leaving 0 rows. Settings were untouched.
+
 - [ ] Site loads with no "connect the database" screen
 - [ ] Admin email-code login works; the email arrives with a 6-digit code (check spam)
 - [ ] Settings save; UPI ID shows in a parent's Pay screen as a QR code
