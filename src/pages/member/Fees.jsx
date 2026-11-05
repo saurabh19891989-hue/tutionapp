@@ -72,21 +72,23 @@ export default function Fees() {
           {data.payments.length === 0 ? <Empty icon={IndianRupee} title="No payments yet" /> : (
             <div className="table-wrap">
               <table className="table">
-                <thead><tr><th>Date</th><th>Amount</th><th>Via</th><th>Status</th><th /></tr></thead>
+                <thead><tr><th>Date</th><th>Amount</th><th className="hidden sm:table-cell">Via</th><th>Status</th></tr></thead>
                 <tbody>
                   {data.payments.map((p) => (
                     <tr key={p.id}>
                       <td className="whitespace-nowrap">{fmtDate(p.paid_on)}</td>
                       <td className="font-bold">{money(p.amount)}</td>
-                      <td className="uppercase text-muted">{p.method}</td>
-                      <td><Badge status={p.status} /></td>
-                      <td className="text-right">
-                        {p.status === 'pending' && p.submitted_by === user?.id && (
-                          <button className="btn-ghost btn-sm text-rose-600" disabled={busy} title="Reported by mistake? Take it back."
-                            onClick={async () => { if (confirm(`Withdraw your ${money(p.amount)} payment report?`) && await run(() => supabase.from('payments').delete().eq('id', p.id), 'Report withdrawn')) load() }}>
-                            Withdraw
-                          </button>
-                        )}
+                      <td className="hidden uppercase text-muted sm:table-cell">{p.method}</td>
+                      <td>
+                        <div className="flex flex-wrap items-center gap-1">
+                          <Badge status={p.status} />
+                          {p.status === 'pending' && p.submitted_by === user?.id && (
+                            <button className="btn-ghost btn-sm px-2 text-rose-600" disabled={busy} title="Reported by mistake? Take it back."
+                              onClick={async () => { if (confirm(`Withdraw your ${money(p.amount)} payment report?`) && await run(() => supabase.from('payments').delete().eq('id', p.id), 'Report withdrawn')) load() }}>
+                              Withdraw
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
