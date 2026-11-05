@@ -120,7 +120,7 @@ export default function Dashboard() {
             </Card>
           )}
 
-          <div className="grid gap-5 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
             <Card className="p-4">
               <div className="mb-3 flex items-center justify-between">
                 <h2 className="text-lg font-extrabold">Today’s classes</h2>

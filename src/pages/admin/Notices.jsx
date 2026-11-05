@@ -24,7 +24,7 @@ export default function NoticesAdmin() {
   return (
     <>
       <PageHeader title="Notice board" subtitle="Holidays, exam tips, schedule changes — every student and parent sees these on their home screen." />
-      <div className="grid gap-5 lg:grid-cols-[1fr_1.3fr]">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_1.3fr]">
         <Card className="h-fit space-y-3 p-4">
           <Field label="Title"><input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="No classes on Diwali (1–3 Nov)" /></Field>
           <Field label="Details (optional)"><textarea rows={4} className="input" value={body} onChange={(e) => setBody(e.target.value)} /></Field>

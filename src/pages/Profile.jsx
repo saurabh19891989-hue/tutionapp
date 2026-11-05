@@ -19,7 +19,7 @@ export default function Profile() {
   return (
     <>
       <PageHeader title="My profile" subtitle={user.email} />
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Card className="space-y-3 p-4">
           <h2 className="text-lg font-extrabold">Your details</h2>
           <Field label="Name"><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></Field>

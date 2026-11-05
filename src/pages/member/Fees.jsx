@@ -43,7 +43,7 @@ export default function Fees() {
         <Stat icon={Receipt} tone="brand" label="Paid so far" value={money(bal.paid)} hint={Number(bal.unbilled) > 0 ? `${money(bal.unbilled)} of classes not yet on a bill` : 'Confirmed by the teacher'} />
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Card className="p-4">
           <h2 className="mb-3 text-lg font-extrabold">Bills</h2>
           {data.invoices.length === 0 ? <Empty icon={Receipt} title="No bills yet" /> : (

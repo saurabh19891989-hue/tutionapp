@@ -91,7 +91,7 @@ export default function MemberHome() {
       </div>
 
       {!data ? <Loading /> : (
-        <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.4fr_1fr]">
           <div className="space-y-5">
             <Card className="overflow-hidden">
               <div className="bg-gradient-to-r from-brand-600 to-brand-500 p-5 text-white">

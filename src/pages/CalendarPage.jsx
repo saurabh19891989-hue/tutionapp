@@ -69,7 +69,7 @@ export default function CalendarPage() {
         )}
       />
 
-      <div className="grid gap-5 lg:grid-cols-[1.25fr_1fr]">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.25fr_1fr]">
         <MonthCalendar month={month} onMonthChange={setMonth} selected={selected} onSelect={setSelected} events={events} />
 
         <Card className="p-4">

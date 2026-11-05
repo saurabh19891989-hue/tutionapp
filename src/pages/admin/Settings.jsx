@@ -50,7 +50,7 @@ export default function SettingsPage() {
     <>
       <PageHeader title="Settings" subtitle="Your details, payment info and who can manage the app."
         actions={<button className="btn-primary" disabled={busy} onClick={save}>{busy ? <Spinner /> : <Save size={16} />} Save</button>} />
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Card className="space-y-3 p-4">
           <h2 className="text-lg font-extrabold">Brand & contact</h2>
           <Field label="Name shown in the app"><input className="input" value={f.brand_name} onChange={set('brand_name')} /></Field>
