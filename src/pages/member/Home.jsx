@@ -63,7 +63,7 @@ export default function MemberHome() {
           <div className="mx-auto mt-3 w-fit rounded-xl bg-brand-50 px-4 py-2 font-extrabold text-brand-700">{user.email}</div>
           {(settings?.phone || settings?.contact_email) && (
             <div className="mt-4 flex flex-wrap justify-center gap-2">
-              {settings.phone && <a className="btn-soft btn-sm" href={`https://wa.me/${settings.phone.replace(/\D/g, '')}?text=${encodeURIComponent(`Hello, please link my account (${user.email}) on the class app.`)}`} target="_blank" rel="noreferrer"><Phone size={15} /> WhatsApp</a>}
+              {settings.phone && <a className="btn-soft btn-sm" href={`https://wa.me/${settings.phone.replace(/\D/g, '').replace(/^(\d{10})$/, '91$1')}?text=${encodeURIComponent(`Hello, please link my account (${user.email}) on the class app.`)}`} target="_blank" rel="noreferrer"><Phone size={15} /> WhatsApp</a>}
               {settings.contact_email && <a className="btn-soft btn-sm" href={`mailto:${settings.contact_email}`}><Mail size={15} /> Email</a>}
             </div>
           )}
@@ -75,6 +75,10 @@ export default function MemberHome() {
 
   const next = data?.upcoming?.find((c) => c.status === 'scheduled')
   const due = balanceDue(data?.balance)
+  const feesStat = data && (
+    <Stat icon={Wallet} tone={due > 0 ? 'rose' : 'mint'} label={due >= 0 ? 'Fees due' : 'Advance credit'} value={money(Math.abs(due))}
+      hint={Number(data.balance?.pending) > 0 ? `${money(data.balance.pending)} awaiting confirmation` : due > 0 ? 'Tap to pay by UPI' : 'All clear'} />
+  )
 
   return (
     <>
@@ -114,6 +118,8 @@ export default function MemberHome() {
                 <Link to="/fees" className="btn-soft"><Wallet size={17} /> Fees</Link>
               </div>
             </Card>
+            {/* on phones the side column sits at the very bottom, so show the fees right under the next class */}
+            <Link to="/fees" className="block lg:hidden">{feesStat}</Link>
 
             {data.upcoming.length > 0 && (
               <div>
@@ -131,8 +137,7 @@ export default function MemberHome() {
           </div>
 
           <div className="space-y-5">
-            <Stat icon={Wallet} tone={due > 0 ? 'rose' : 'mint'} label={due >= 0 ? 'Fees due' : 'Advance credit'} value={money(Math.abs(due))}
-              hint={Number(data.balance?.pending) > 0 ? `${money(data.balance.pending)} awaiting confirmation` : due > 0 ? 'Tap Fees to pay by UPI' : 'All clear'} />
+            <Link to="/fees" className="hidden lg:block">{feesStat}</Link>
             <Card className="p-4 text-sm">
               <div className="mb-1 flex items-center gap-2 font-extrabold"><ModeIcon mode={activeStudent.default_mode} /> {activeStudent.full_name}</div>
               <div className="text-muted">{[activeStudent.grade && `Class ${activeStudent.grade}`, activeStudent.subjects].filter(Boolean).join(' · ') || '—'}</div>

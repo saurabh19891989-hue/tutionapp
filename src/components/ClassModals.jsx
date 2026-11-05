@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Home, Video, Clock, MapPin, Link as LinkIcon, NotebookPen, CheckCircle2, XCircle, Trash2, UserX, IndianRupee, CalendarClock } from 'lucide-react'
+import { Home, Video, Clock, MapPin, Link as LinkIcon, NotebookPen, CheckCircle2, XCircle, Trash2, UserX, IndianRupee, CalendarClock, Phone } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { Badge, Field, Modal, Spinner, useAction } from './ui'
@@ -288,13 +288,18 @@ export function ClassDetailModal({ cls, onClose, onChanged, onEdit }) {
   const [replaced, setReplaced] = useState(null) // the class a "move" request replaces
   const [charge, setCharge] = useState(null) // { amount, title } while charging a missed/cancelled class
   const [moving, setMoving] = useState(false)
+  const [moveReq, setMoveReq] = useState(null) // a pending request to move this class elsewhere
 
   useEffect(() => {
     setTopic(cls?.topic || ''); setHomework(cls?.homework || ''); setReason(''); setConfirmCancel(false)
-    setReopen(true); setCharge(null); setMoving(false); setReplaced(null)
+    setReopen(true); setCharge(null); setMoving(false); setReplaced(null); setMoveReq(null)
     if (cls?.replaces_class) {
       supabase.from('classes').select('id, start_at, end_at, status').eq('id', cls.replaces_class).maybeSingle()
         .then(({ data }) => setReplaced(data))
+    }
+    if (cls?.status === 'scheduled') {
+      supabase.from('classes').select('id, start_at, end_at').eq('replaces_class', cls.id).eq('status', 'requested').limit(1).maybeSingle()
+        .then(({ data }) => setMoveReq(data))
     }
   }, [cls])
   if (!cls) return null
@@ -302,6 +307,9 @@ export function ClassDetailModal({ cls, onClose, onChanged, onEdit }) {
   const upcoming = ['requested', 'scheduled'].includes(cls.status)
   const future = new Date(cls.start_at) > new Date()
   const link = cls.meeting_link || cls.students?.meeting_link
+  // families can cancel a booked class online only with enough notice (the server checks this too)
+  const tooLate = !isAdmin && cls.status === 'scheduled'
+    && new Date(cls.start_at) < new Date(Date.now() + (settings?.cancel_notice_hours || 0) * 3600e3)
   const done = async (fn, msg) => { const ok = await run(fn, msg); if (ok) { onChanged?.(); onClose() } }
 
   const update = (patch, msg) => done(() => supabase.from('classes').update(patch).eq('id', cls.id), msg)
@@ -354,6 +362,9 @@ export function ClassDetailModal({ cls, onClose, onChanged, onEdit }) {
               <LinkIcon size={15} /> Join class
             </a>
           )}
+          {cls.mode === 'online' && !link && upcoming && (
+            <div className="text-muted">{isAdmin ? 'No class link yet: add one with Edit, or on the student.' : 'The class link will show here once the teacher adds it.'}</div>
+          )}
           {isAdmin && (['missed', 'cancelled'].includes(cls.status)
             ? <div>{fmtHours(hoursOf(cls))} · {cls.invoice_id ? <b>Charged (see Billing)</b> : 'Not charged'}</div>
             : <div>{fmtHours(hoursOf(cls))} · Fee: <b>{money(classAmount(cls, cls.students))}</b>{cls.is_trial ? ' (trial)' : ''}{cls.invoice_id ? ' · billed' : ''}</div>)}
@@ -365,6 +376,12 @@ export function ClassDetailModal({ cls, onClose, onChanged, onEdit }) {
           ) : (
             <div className="text-muted">Moved from {replaced ? `${fmtDay(replaced.start_at)} · ${fmtRange(replaced.start_at, replaced.end_at)}` : '…'}</div>
           ))}
+          {moveReq && (
+            <div className="font-semibold text-sun-600">
+              {isAdmin ? 'The family asked to move this to' : 'You asked to move this to'} {fmtDay(moveReq.start_at)} · {fmtRange(moveReq.start_at, moveReq.end_at)}
+              {isAdmin ? ' (open that request to approve it)' : '. Waiting for the teacher.'}
+            </div>
+          )}
           {cls.request_note && <div className="text-muted">Note from family: “{cls.request_note}”</div>}
           {cls.cancel_reason && <div className="text-muted">Cancel reason: {cls.cancel_reason}</div>}
         </div>
@@ -423,13 +440,22 @@ export function ClassDetailModal({ cls, onClose, onChanged, onEdit }) {
                 {cls.homework && <div className="rounded-xl bg-sun-100 p-3"><div className="label text-sun-600">Homework</div>{cls.homework}</div>}
               </div>
             )}
-            {cls.status === 'scheduled' && future && (
+            {cls.status === 'scheduled' && future && !moveReq && (
               <button className="btn-soft btn-sm" onClick={() => setMoving(true)}><CalendarClock size={15} /> Ask to change the time</button>
             )}
           </>
         )}
 
-        {upcoming && (
+        {upcoming && tooLate && future && (
+          <div className="flex flex-wrap items-center gap-2 border-t border-brand-100 pt-3 text-sm text-muted">
+            Too close to the class to cancel online.
+            {settings?.phone
+              ? <a href={`tel:${settings.phone}`} className="btn-soft btn-sm"><Phone size={14} /> Call {settings.teacher_name || 'the teacher'}</a>
+              : 'Please call the teacher.'}
+          </div>
+        )}
+
+        {upcoming && !tooLate && (
           <div className="border-t border-brand-100 pt-3">
             {!confirmCancel ? (
               <button className="btn-danger btn-sm" onClick={() => setConfirmCancel(true)}>
@@ -448,7 +474,9 @@ export function ClassDetailModal({ cls, onClose, onChanged, onEdit }) {
                   </label>
                 )}
                 <div className="flex gap-2">
-                  <button className="btn-danger" disabled={busy} onClick={cancel}>{busy && <Spinner />} Yes, cancel</button>
+                  <button className="btn-danger" disabled={busy} onClick={cancel}>
+                    {busy && <Spinner />} {cls.status === 'requested' ? (isAdmin ? 'Yes, decline' : 'Yes, withdraw') : 'Yes, cancel'}
+                  </button>
                   <button className="btn-ghost" onClick={() => setConfirmCancel(false)}>Keep it</button>
                 </div>
               </div>

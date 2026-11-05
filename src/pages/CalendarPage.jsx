@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Plus, CalendarPlus, Trash2, Clock, CalendarX2, Send } from 'lucide-react'
+import { Plus, CalendarPlus, Trash2, Clock, CalendarX2, Send, Phone } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import MonthCalendar from '../components/MonthCalendar'
@@ -42,6 +42,7 @@ export default function CalendarPage() {
   const dayClasses = (classes || []).filter((c) => sameDay(c.start_at, selected))
   const daySlots = slots.filter((s) => sameDay(s.start_at, selected))
   const openSlots = daySlots.filter((s) => !s.class_id)
+  const bookCutoff = Date.now() + (settings?.booking_notice_hours || 0) * 3600e3
 
   const [run, busy] = useAction()
   const deleteSlot = async (id) => { if (await run(() => supabase.from('slots').delete().eq('id', id), 'Slot removed')) load() }
@@ -92,6 +93,11 @@ export default function CalendarPage() {
                             <button className="btn-soft btn-sm" onClick={() => setBooking(s)} title="Book this slot for a student (e.g. when a parent calls)">Book for…</button>
                             <button className="rounded-lg p-1.5 text-mint-700 hover:bg-white" disabled={busy} onClick={() => deleteSlot(s.id)} aria-label="Remove slot"><Trash2 size={16} /></button>
                           </div>
+                        ) : new Date(s.start_at) < bookCutoff ? (
+                          // inside the booking notice: families can't book online, so offer a call instead
+                          settings?.phone
+                            ? <a href={`tel:${settings.phone}`} className="btn-soft btn-sm shrink-0"><Phone size={14} /> Call to book</a>
+                            : <span className="text-xs font-bold text-mint-700">Call the teacher to book</span>
                         ) : (
                           <button className="btn-success btn-sm" onClick={() => setBooking(s)}>Book</button>
                         )}

@@ -76,7 +76,7 @@ export default function Fees() {
                 <tbody>
                   {data.payments.map((p) => (
                     <tr key={p.id}>
-                      <td>{fmtDate(p.paid_on)}</td>
+                      <td className="whitespace-nowrap">{fmtDate(p.paid_on)}</td>
                       <td className="font-bold">{money(p.amount)}</td>
                       <td className="uppercase text-muted">{p.method}</td>
                       <td><Badge status={p.status} /></td>
