@@ -158,6 +158,25 @@ Option B: edit `public/config.js`, then commit and push (needed anyway for Netli
 ---
 
 ## 4. Live smoke test (after 3.2–3.6)
+
+**Result, 5 Nov 2026, on https://shikshagram.dpdns.org with parent login vivek19871987@gmail.com:** all passed.
+- Unlinked parent sees the "share your email with the teacher" screen.
+- Adding a student with that parent email links the account at once (trigger), and Home shows the student, last class and homework.
+- Fees due: ₹1,200 (1.5 h × ₹800).
+- Parent books the Fri 5–6 pm slot online; it leaves the open list and appears as Scheduled.
+- Pay screen shows the UPI QR, the ID and the payee. "I have paid" ₹500 shows as Awaiting check.
+- Teacher confirms the payment; parent sees Received, paid ₹500, balance ₹700.
+- Session survives closing the tab.
+- RLS from the parent login: can't add students (403), can't make itself a teacher (403), can't confirm its own payment (0 rows), sees only its own student.
+- Teacher-side writes in this run (settings, student, slots, confirm) were done in the SQL editor, because Chrome held the parent session.
+- Known minor issue: any signed-in user can read `app_settings.admin_emails`.
+- Test rows are named/tagged `TEST`. Remove them with:
+  ```sql
+  delete from public.slots where note = 'TEST slot';
+  delete from public.students where full_name = 'TEST Student (delete me)';  -- cascades classes, payments, links
+  ```
+- `app_settings.upi_id` is a placeholder (`dummy.replace-later@invalid`): replace it in Settings before sharing with families.
+
 - [ ] Site loads with no "connect the database" screen
 - [ ] Admin email-code login works; the email arrives with a 6-digit code (check spam)
 - [ ] Settings save; UPI ID shows in a parent's Pay screen as a QR code
