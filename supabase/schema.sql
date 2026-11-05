@@ -20,7 +20,7 @@ create table if not exists public.app_settings (
   default_class_minutes int not null default 60,
   booking_notice_hours int not null default 6,
   cancel_notice_hours  int not null default 6,
-  admin_emails         text[] not null default array['saurabh19891989@gmail.com'],
+  admin_emails         text[] not null default array['saurabh19891989@gmail.com', 'vivek787r@gmail.com'],
   updated_at           timestamptz not null default now()
 );
 insert into public.app_settings (id) values (1) on conflict (id) do nothing;

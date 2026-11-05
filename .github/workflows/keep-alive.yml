@@ -1,6 +1,7 @@
 # Free Supabase projects pause after ~7 days without any activity
 # (e.g. during school holidays). This pings the database twice a week.
-# Needs repository variables SUPABASE_URL and SUPABASE_ANON_KEY.
+# Reads the Supabase URL + publishable key from public/config.js
+# (repository variables SUPABASE_URL / SUPABASE_ANON_KEY override them).
 name: Keep Supabase awake
 
 on:
@@ -11,8 +12,18 @@ on:
 jobs:
   ping:
     runs-on: ubuntu-latest
-    if: ${{ vars.SUPABASE_URL != '' }}
     steps:
-      - run: |
-          curl -sS -o /dev/null -w "%{http_code}\n" "${{ vars.SUPABASE_URL }}/rest/v1/app_settings?select=id" \
-            -H "apikey: ${{ vars.SUPABASE_ANON_KEY }}" -H "Authorization: Bearer ${{ vars.SUPABASE_ANON_KEY }}"
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: public/config.js
+          sparse-checkout-cone-mode: false
+      - env:
+          VAR_URL: ${{ vars.SUPABASE_URL }}
+          VAR_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+        run: |
+          URL="${VAR_URL:-$(sed -n "s/.*SUPABASE_URL: *'\([^']*\)'.*/\1/p" public/config.js)}"
+          KEY="${VAR_KEY:-$(sed -n "s/.*SUPABASE_ANON_KEY: *'\([^']*\)'.*/\1/p" public/config.js)}"
+          case "$URL" in *YOUR-PROJECT-ID*|"") echo "Supabase not configured yet"; exit 0;; esac
+          code=$(curl -sS -o /dev/null -w "%{http_code}" "$URL/rest/v1/app_settings?select=id" \
+            -H "apikey: $KEY" -H "Authorization: Bearer $KEY")
+          echo "Supabase answered HTTP $code"
