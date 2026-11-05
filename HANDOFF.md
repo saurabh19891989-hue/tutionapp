@@ -159,6 +159,28 @@ Option B: edit `public/config.js`, then commit and push (needed anyway for Netli
 
 ## 4. Live smoke test (after 3.2–3.6)
 
+**Teacher-button test, 5 Nov 2026, signed in as vivek787r@gmail.com in Chrome:** every teacher feature was clicked through with TEST data, and all data was removed afterwards.
+- Settings: save, reload, revert; the admin list is shown to admins only.
+- Notices: post, pin, unpin, delete.
+- Students: add per-hour, per-class and monthly students. A parent email typed with a capital letter still auto-links. Manual link as student, unlink, edit, deactivate, Show inactive, search, and the new Delete.
+- Calendar: open 6 slots (3 in a row, 15-minute breaks, 2 weeks), delete a slot, add a repeating class, edit its time, cancel it with a reason, delete it.
+- Register: trial hour (₹0), 1.5 h (₹1,200), a per-class online class (₹500), the day view.
+- Billing: create bills for all (no duplicates on a second run), single-student bill, record payment, the row's Paid button, void a bill (its classes become unbilled), delete a payment.
+- Dashboard: confirm (Received) and reject (No) a parent's payment report; approve a class request.
+- Classes: tabs, mark completed with topic and homework, filter by student.
+
+Bugs found and fixed during this run:
+- **Editing any student without both emails crashed on Save** (`null.trim()`). The form now keeps '' for blank fields. *(src/pages/admin/Students.jsx)*
+- **Bill titles rounded hours** (2.5 h showed as "3 hrs"; amounts were right). `generate_invoice()` now formats with `FM9990.99`. *(schema.sql, applied to the live DB)*
+- **Payments recorded as "General" left bills showing Due.** The payment form now preselects the oldest unpaid bill and fills in what's left. *(Billing.jsx)*
+- **Signed-in users could read the admin email list.** It's now a column grant plus the admin-only `get_admin_emails()` RPC. *(schema.sql + auth.jsx + Settings.jsx, applied live)*
+- **Added a Delete-student button** in the edit form, with a warning about classes, bills and payments.
+
+Not changed, by design:
+- The Register's "Earned" includes monthly fees for the month.
+- Monthly-plan balances only count once a bill is created.
+- Create bills defaults to last month until the 10th.
+
 **Result, 5 Nov 2026, on https://shikshagram.dpdns.org with parent login vivek19871987@gmail.com:** all passed.
 - Unlinked parent sees the "share your email with the teacher" screen.
 - Adding a student with that parent email links the account at once (trigger), and Home shows the student, last class and homework.
