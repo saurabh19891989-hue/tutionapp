@@ -511,15 +511,45 @@ $$;
 -- =====================================================================
 --  Views (respect the caller's row-level security)
 -- =====================================================================
-drop view if exists public.invoice_summary; -- recreated: its i.* columns change when invoices gains columns
+-- Bills with what has been paid on them. paid_amount = payments made against the bill
+-- + the family's general payments and discounts, used up on the oldest open bills first
+-- (so a family with credit never sees "Due"). paid_direct = only payments against this bill.
+drop view if exists public.invoice_summary;
 create view public.invoice_summary
 with (security_invoker = true) as
-select i.*,
-       s.full_name as student_name,
-       coalesce((select sum(p.amount) from public.payments p
-                  where p.invoice_id = i.id and p.status = 'confirmed'), 0) as paid_amount
-from public.invoices i
-join public.students s on s.id = i.student_id;
+with billed as (
+  select i.*,
+         s.full_name as student_name,
+         coalesce((select sum(p.amount) from public.payments p
+                    where p.invoice_id = i.id and p.status = 'confirmed'), 0) as paid_direct
+  from public.invoices i
+  join public.students s on s.id = i.student_id
+),
+owed as (
+  select b.*,
+         case when b.status = 'issued' and b.amount > 0 then greatest(b.amount - b.paid_direct, 0) else 0 end as still_owed
+  from billed b
+),
+ordered as (
+  select o.*,
+         coalesce(sum(o.still_owed) over (partition by o.student_id order by o.created_at, o.invoice_no
+                                          rows between unbounded preceding and 1 preceding), 0) as owed_before
+  from owed o
+),
+credit as (
+  select s.id as student_id,
+         coalesce((select sum(p.amount) from public.payments p
+                    where p.student_id = s.id and p.status = 'confirmed' and p.invoice_id is null), 0)
+       + coalesce((select sum(-i.amount) from public.invoices i
+                    where i.student_id = s.id and i.status = 'issued' and i.amount < 0), 0) as general_credit
+  from public.students s
+)
+select o.id, o.invoice_no, o.student_id, o.title, o.period_start, o.period_end, o.amount, o.due_date,
+       o.status, o.notes, o.created_at, o.kind, o.student_name,
+       o.paid_direct + least(o.still_owed, greatest(coalesce(c.general_credit, 0) - o.owed_before, 0)) as paid_amount,
+       o.paid_direct
+from ordered o
+left join credit c on c.student_id = o.student_id;
 
 create or replace view public.student_balances
 with (security_invoker = true) as

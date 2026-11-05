@@ -357,12 +357,14 @@ export function ClassDetailModal({ cls, onClose, onChanged, onEdit }) {
           {isAdmin && (['missed', 'cancelled'].includes(cls.status)
             ? <div>{fmtHours(hoursOf(cls))} · {cls.invoice_id ? <b>Charged (see Billing)</b> : 'Not charged'}</div>
             : <div>{fmtHours(hoursOf(cls))} · Fee: <b>{money(classAmount(cls, cls.students))}</b>{cls.is_trial ? ' (trial)' : ''}{cls.invoice_id ? ' · billed' : ''}</div>)}
-          {cls.replaces_class && (
+          {cls.replaces_class && (cls.status === 'requested' ? (
             <div className="font-semibold text-sun-600">
               Request to move the class on {replaced ? `${fmtDay(replaced.start_at)} · ${fmtRange(replaced.start_at, replaced.end_at)}` : '…'}
               {replaced && replaced.status !== 'scheduled' ? ` (that class is now ${replaced.status})` : ''}
             </div>
-          )}
+          ) : (
+            <div className="text-muted">Moved from {replaced ? `${fmtDay(replaced.start_at)} · ${fmtRange(replaced.start_at, replaced.end_at)}` : '…'}</div>
+          ))}
           {cls.request_note && <div className="text-muted">Note from family: “{cls.request_note}”</div>}
           {cls.cancel_reason && <div className="text-muted">Cancel reason: {cls.cancel_reason}</div>}
         </div>

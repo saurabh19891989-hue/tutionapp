@@ -223,6 +223,13 @@ export function InvoiceModal({ open, onClose, studentId, onSaved }) {
           <Field label="From"><input type="date" className="input" value={f.start || ''} onChange={set('start')} /></Field>
           <Field label="To"><input type="date" className="input" value={f.end || ''} onChange={set('end')} /></Field>
           <Field label="Due date" hint="Default: 7 days after period"><input type="date" className="input" value={f.due || ''} onChange={set('due')} /></Field>
+          <div className="flex items-end gap-2 pb-5">
+            {[['Last month', -1], ['This month', 0]].map(([label, off]) => {
+              const n = new Date(); const s = new Date(n.getFullYear(), n.getMonth() + off, 1); const e = new Date(s.getFullYear(), s.getMonth() + 1, 0)
+              const on = f.start === ymd(s) && f.end === ymd(e)
+              return <button key={label} type="button" className={`btn-sm ${on ? 'btn-primary' : 'btn-soft'}`} onClick={() => setF((x) => ({ ...x, start: ymd(s), end: ymd(e) }))}>{label}</button>
+            })}
+          </div>
         </div>
         {!f.all && (
           <label className="flex items-center gap-2 text-sm font-semibold">
