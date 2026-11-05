@@ -41,7 +41,7 @@ The anon key is designed to be public. Row-level security in the database decide
 
 ### Option A: GitHub Pages (already set up in this repo)
 1. Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**.
-2. Merge this branch into `main`. Every push to `main` runs [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) and publishes to
+2. Re-run the workflow (Actions → *Deploy to GitHub Pages* → *Run workflow*). Every push to the default branch runs [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) and publishes to
    **https://saurabh19891989-hue.github.io/tutionapp/**
 3. Put that URL in Supabase **Site URL / Redirect URLs** (step 1.5).
 

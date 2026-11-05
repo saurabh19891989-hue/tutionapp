@@ -6,7 +6,9 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    # the repo's default branch is currently claude/nice-pasteur-vusfzl;
+    # GitHub Pages only deploys from the default branch
+    branches: [main, claude/nice-pasteur-vusfzl]
   workflow_dispatch:
 
 permissions:
