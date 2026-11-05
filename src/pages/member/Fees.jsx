@@ -2,15 +2,16 @@ import { useCallback, useEffect, useState } from 'react'
 import { Wallet, Receipt, IndianRupee, Clock4 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../lib/auth'
-import { Badge, Card, Empty, Loading, PageHeader, Stat } from '../../components/ui'
+import { Badge, Card, Empty, Loading, PageHeader, Stat, useAction } from '../../components/ui'
 import PayModal from '../../components/PayModal'
 import StudentPicker from '../../components/StudentPicker'
 import { balanceDue, fmtDate, invoiceState, money, planLabel } from '../../lib/format'
 
 export default function Fees() {
-  const { activeStudent } = useAuth()
+  const { activeStudent, user } = useAuth()
   const [data, setData] = useState(null)
   const [pay, setPay] = useState(null) // { invoice? }
+  const [run, busy] = useAction()
 
   const load = useCallback(async () => {
     if (!activeStudent) return
@@ -58,7 +59,7 @@ export default function Fees() {
                     </div>
                     <div className="text-right">
                       <div className="font-extrabold">{money(inv.amount)}</div>
-                      {st !== 'paid' && <button className="btn-success btn-sm mt-1" onClick={() => setPay({ invoice: inv })}>Pay</button>}
+                      {(st === 'due' || st === 'partial') && <button className="btn-success btn-sm mt-1" onClick={() => setPay({ invoice: inv })}>Pay</button>}
                     </div>
                   </div>
                 )
@@ -71,7 +72,7 @@ export default function Fees() {
           {data.payments.length === 0 ? <Empty icon={IndianRupee} title="No payments yet" /> : (
             <div className="table-wrap">
               <table className="table">
-                <thead><tr><th>Date</th><th>Amount</th><th>Via</th><th>Status</th></tr></thead>
+                <thead><tr><th>Date</th><th>Amount</th><th>Via</th><th>Status</th><th /></tr></thead>
                 <tbody>
                   {data.payments.map((p) => (
                     <tr key={p.id}>
@@ -79,6 +80,14 @@ export default function Fees() {
                       <td className="font-bold">{money(p.amount)}</td>
                       <td className="uppercase text-muted">{p.method}</td>
                       <td><Badge status={p.status} /></td>
+                      <td className="text-right">
+                        {p.status === 'pending' && p.submitted_by === user?.id && (
+                          <button className="btn-ghost btn-sm text-rose-600" disabled={busy} title="Reported by mistake? Take it back."
+                            onClick={async () => { if (confirm(`Withdraw your ${money(p.amount)} payment report?`) && await run(() => supabase.from('payments').delete().eq('id', p.id), 'Report withdrawn')) load() }}>
+                            Withdraw
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

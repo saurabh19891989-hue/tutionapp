@@ -64,7 +64,8 @@ export default function Register() {
         t[c.student_id].amount += classAmount(c, s)
       } else if (c.status === 'scheduled') t[c.student_id].upcoming += 1
     }
-    for (const s of columns) if (s.billing_type === 'monthly') t[s.id].amount = Number(s.monthly_fee || 0)
+    // monthly plans: the monthly fee + any extra classes that were given their own fee
+    for (const s of columns) if (s.billing_type === 'monthly') t[s.id].amount += Number(s.monthly_fee || 0)
     return t
   }, [classes, columns])
 
@@ -172,7 +173,7 @@ export default function Register() {
             <span><b className="rounded bg-sun-100 px-1 text-sun-600">1.5T</b> trial (free)</span>
             <span><b className="rounded border border-brand-300 px-1 text-brand-600">1</b> booked / upcoming</span>
             <span><b className="rounded bg-rose-100 px-1 text-rose-600">A</b> absent / missed</span>
-            <span>Amount for monthly-plan students = their monthly fee.</span>
+            <span>Amount for monthly-plan students = their monthly fee + extra classes given their own fee.</span>
           </div>
         </>
       )}

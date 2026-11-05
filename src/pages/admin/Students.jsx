@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Plus, Users, Search, Phone, MapPin, Mail, Link2, Unlink, Pencil, IndianRupee, ReceiptText, MessageCircle, Trash2 } from 'lucide-react'
+import { Plus, Users, Search, Phone, MapPin, Mail, Link2, Unlink, Pencil, IndianRupee, ReceiptText, MessageCircle, Trash2, SlidersHorizontal } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../lib/auth'
 import { Badge, Card, Empty, Field, Loading, Modal, PageHeader, Spinner, useAction } from '../../components/ui'
 import { CLASS_SELECT, ClassDetailModal, ClassRow } from '../../components/ClassModals'
-import { RecordPaymentModal, InvoiceModal } from './Billing'
+import { RecordPaymentModal, InvoiceModal, AdjustmentModal } from './Billing'
 import { balanceDue, money, planLabel } from '../../lib/format'
 
 const EMPTY = {
@@ -179,6 +179,7 @@ function StudentDetail({ student, balance, onClose, onEdit, onChanged }) {
   const [detail, setDetail] = useState(null)
   const [payOpen, setPayOpen] = useState(false)
   const [invOpen, setInvOpen] = useState(false)
+  const [adjOpen, setAdjOpen] = useState(false)
   const [run, busy] = useAction()
 
   const load = useCallback(async () => {
@@ -209,6 +210,7 @@ function StudentDetail({ student, balance, onClose, onEdit, onChanged }) {
       <Modal open onClose={onClose} wide title={student.full_name}
         footer={<>
           <button className="btn-soft" onClick={() => setInvOpen(true)}><ReceiptText size={16} /> Create bill</button>
+          <button className="btn-soft" onClick={() => setAdjOpen(true)}><SlidersHorizontal size={16} /> Charge / discount</button>
           <button className="btn-success" onClick={() => setPayOpen(true)}><IndianRupee size={16} /> Record payment</button>
           <button className="btn-primary" onClick={() => onEdit(student)}><Pencil size={16} /> Edit</button>
         </>}>
@@ -263,6 +265,7 @@ function StudentDetail({ student, balance, onClose, onEdit, onChanged }) {
       <ClassDetailModal cls={detail} onClose={() => setDetail(null)} onChanged={load} />
       <RecordPaymentModal open={payOpen} onClose={() => setPayOpen(false)} studentId={student.id} onSaved={() => { onChanged(); onClose() }} />
       <InvoiceModal open={invOpen} onClose={() => setInvOpen(false)} studentId={student.id} onSaved={() => { onChanged(); onClose() }} />
+      <AdjustmentModal open={adjOpen} onClose={() => setAdjOpen(false)} studentId={student.id} onSaved={() => { onChanged(); onClose() }} />
     </>
   )
 }

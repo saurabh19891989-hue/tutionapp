@@ -37,10 +37,12 @@ export const STATUS = {
   partial: { label: 'Part paid', cls: 'bg-sun-100 text-sun-600' },
   due: { label: 'Due', cls: 'bg-rose-100 text-rose-600' },
   void: { label: 'Void', cls: 'bg-slate-100 text-slate-500' },
+  credit: { label: 'Discount', cls: 'bg-mint-100 text-mint-700' },
 }
 
 export const invoiceState = (inv) => {
   if (inv.status === 'void') return 'void'
+  if (Number(inv.amount) < 0) return 'credit'
   const paid = Number(inv.paid_amount || 0)
   if (paid >= Number(inv.amount)) return 'paid'
   if (paid > 0) return 'partial'

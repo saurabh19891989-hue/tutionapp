@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Home, Video, Clock, MapPin, Link as LinkIcon, NotebookPen, CheckCircle2, XCircle, Trash2, UserX } from 'lucide-react'
+import { Home, Video, Clock, MapPin, Link as LinkIcon, NotebookPen, CheckCircle2, XCircle, Trash2, UserX, IndianRupee, CalendarClock } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { Badge, Field, Modal, Spinner, useAction } from './ui'
@@ -83,6 +83,21 @@ export function ClassFormModal({ open, onClose, onSaved, students, initial, defa
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
   const student = students.find((s) => s.id === form.student_id)
 
+  // warn (don't block) when the new time overlaps another class
+  const [clashes, setClashes] = useState([])
+  useEffect(() => {
+    if (!open || !form.start) { setClashes([]); return }
+    const s = new Date(form.start)
+    if (Number.isNaN(s.getTime())) return
+    const e = addMinutes(s, Number(form.minutes) || 60)
+    let q = supabase.from('classes').select('id, start_at, end_at, status, students(full_name)')
+      .lt('start_at', e.toISOString()).gt('end_at', s.toISOString()).in('status', ['requested', 'scheduled', 'completed'])
+    if (initial?.id) q = q.neq('id', initial.id)
+    let stale = false
+    q.then(({ data }) => { if (!stale) setClashes(data || []) })
+    return () => { stale = true }
+  }, [open, form.start, form.minutes, initial])
+
   async function save() {
     if (!form.student_id) return
     const base = new Date(form.start)
@@ -132,8 +147,18 @@ export function ClassFormModal({ open, onClose, onSaved, students, initial, defa
             <input type="datetime-local" className="input" value={form.start || ''} onChange={set('start')} />
           </Field>
           <Field label="Duration (minutes)" className="col-span-2 sm:col-span-1">
-            <input type="number" min="15" step="15" className="input" value={form.minutes || ''} onChange={set('minutes')} />
+            <input type="number" min="5" step="5" className="input" value={form.minutes || ''} onChange={set('minutes')} />
           </Field>
+          {clashes.length > 0 && (
+            <div className="col-span-2 rounded-xl bg-sun-100 p-2.5 text-xs font-semibold text-sun-600">
+              Overlaps with {clashes.map((c) => `${c.students?.full_name || 'a class'} (${fmtRange(c.start_at, c.end_at)})`).join(', ')}. You can still save.
+            </div>
+          )}
+          {editing && initial?.invoice_id && (
+            <div className="col-span-2 rounded-xl bg-brand-50 p-2.5 text-xs font-semibold text-brand-800">
+              This class is already on a bill. Changing its time or fee won’t change that bill. Edit the bill in Billing if needed.
+            </div>
+          )}
           <Field label="Where">
             <select className="input" value={form.mode} onChange={set('mode')}>
               <option value="home">Home visit</option>
@@ -151,7 +176,9 @@ export function ClassFormModal({ open, onClose, onSaved, students, initial, defa
             </Field>
           )}
           <Field label="Subject"><input className="input" value={form.subject} onChange={set('subject')} placeholder="Maths" /></Field>
-          <Field label="Fee override (₹)" hint={student ? `Empty = ${planLabel(student)}${student.billing_type === 'monthly' ? '' : ` → ${money(classAmount({ start_at: new Date(form.start || Date.now()), end_at: addMinutes(new Date(form.start || Date.now()), Number(form.minutes) || 60), is_trial: form.is_trial }, student))}`}` : ''}>
+          <Field label="Fee override (₹)" hint={!student ? '' : student.billing_type === 'monthly'
+            ? 'Empty = included in the monthly fee. Enter an amount to charge this class extra.'
+            : `Empty = ${planLabel(student)} → ${money(classAmount({ start_at: new Date(form.start || Date.now()), end_at: addMinutes(new Date(form.start || Date.now()), Number(form.minutes) || 60), is_trial: form.is_trial }, student))}`}>
             <input type="number" min="0" className="input" value={form.fee} onChange={set('fee')} placeholder="Auto" />
           </Field>
           <label className="col-span-2 flex items-center gap-2 text-sm font-semibold">
@@ -257,18 +284,55 @@ export function ClassDetailModal({ cls, onClose, onChanged, onEdit }) {
   const [homework, setHomework] = useState('')
   const [reason, setReason] = useState('')
   const [confirmCancel, setConfirmCancel] = useState(false)
+  const [reopen, setReopen] = useState(true)
+  const [replaced, setReplaced] = useState(null) // the class a "move" request replaces
+  const [charge, setCharge] = useState(null) // { amount, title } while charging a missed/cancelled class
+  const [moving, setMoving] = useState(false)
 
   useEffect(() => {
     setTopic(cls?.topic || ''); setHomework(cls?.homework || ''); setReason(''); setConfirmCancel(false)
+    setReopen(true); setCharge(null); setMoving(false); setReplaced(null)
+    if (cls?.replaces_class) {
+      supabase.from('classes').select('id, start_at, end_at, status').eq('id', cls.replaces_class).maybeSingle()
+        .then(({ data }) => setReplaced(data))
+    }
   }, [cls])
   if (!cls) return null
 
   const upcoming = ['requested', 'scheduled'].includes(cls.status)
+  const future = new Date(cls.start_at) > new Date()
   const link = cls.meeting_link || cls.students?.meeting_link
   const done = async (fn, msg) => { const ok = await run(fn, msg); if (ok) { onChanged?.(); onClose() } }
 
   const update = (patch, msg) => done(() => supabase.from('classes').update(patch).eq('id', cls.id), msg)
-  const cancel = () => done(() => supabase.rpc('cancel_class', { p_class: cls.id, p_reason: reason || null }), 'Class cancelled')
+  const cancel = () => done(() => supabase.rpc('cancel_class', { p_class: cls.id, p_reason: reason || null, p_reopen: isAdmin ? reopen : true }),
+    cls.status === 'requested' ? (isAdmin ? 'Request declined' : 'Request withdrawn') : 'Class cancelled')
+  // approving a "move" request also cancels the class it replaces (and frees its slot)
+  const approve = () => done(async () => {
+    const r = await supabase.from('classes').update({ status: 'scheduled' }).eq('id', cls.id)
+    if (r.error || !cls.replaces_class) return r
+    const { data: old } = await supabase.from('classes').select('status').eq('id', cls.replaces_class).maybeSingle()
+    if (old?.status !== 'scheduled') return r
+    return supabase.rpc('cancel_class', { p_class: cls.replaces_class, p_reason: `Moved to ${fmtDay(cls.start_at)} ${fmtRange(cls.start_at, cls.end_at)}`, p_reopen: true })
+  }, cls.replaces_class ? 'Class moved to the new time' : 'Request approved')
+  // charge a missed or late-cancelled class (full or part of the fee) as a separate bill
+  const startCharge = () => {
+    const fee = classAmount({ ...cls, is_trial: false }, cls.students)
+    setCharge({ amount: fee > 0 ? String(fee) : '', title: `${cls.status === 'missed' ? 'Missed class' : 'Late cancellation'} · ${fmtDay(cls.start_at)}` })
+  }
+  const saveCharge = () => done(async () => {
+    const day = ymd(cls.start_at)
+    const ins = await supabase.from('invoices').insert({
+      student_id: cls.student_id, title: charge.title || 'Class charge', amount: Number(charge.amount),
+      period_start: day, period_end: day, due_date: ymd(addMinutes(new Date(), 7 * 24 * 60)), kind: 'adjustment',
+    }).select('id').single()
+    if (ins.error) return ins
+    return supabase.from('classes').update({ invoice_id: ins.data.id }).eq('id', cls.id)
+  }, 'Charge added to the bill list')
+
+  if (moving) {
+    return <RequestModal open replaces={cls} student={cls.students} onClose={() => setMoving(false)} onSaved={() => { onChanged?.(); onClose() }} />
+  }
 
   return (
     <Modal open={!!cls} onClose={onClose} title={cls.students?.full_name || 'Class'}>
@@ -290,7 +354,15 @@ export function ClassDetailModal({ cls, onClose, onChanged, onEdit }) {
               <LinkIcon size={15} /> Join class
             </a>
           )}
-          {isAdmin && <div>{fmtHours(hoursOf(cls))} · Fee: <b>{money(classAmount(cls, cls.students))}</b>{cls.is_trial ? ' (trial)' : ''}{cls.invoice_id ? ' · billed' : ''}</div>}
+          {isAdmin && (['missed', 'cancelled'].includes(cls.status)
+            ? <div>{fmtHours(hoursOf(cls))} · {cls.invoice_id ? <b>Charged (see Billing)</b> : 'Not charged'}</div>
+            : <div>{fmtHours(hoursOf(cls))} · Fee: <b>{money(classAmount(cls, cls.students))}</b>{cls.is_trial ? ' (trial)' : ''}{cls.invoice_id ? ' · billed' : ''}</div>)}
+          {cls.replaces_class && (
+            <div className="font-semibold text-sun-600">
+              Request to move the class on {replaced ? `${fmtDay(replaced.start_at)} · ${fmtRange(replaced.start_at, replaced.end_at)}` : '…'}
+              {replaced && replaced.status !== 'scheduled' ? ` (that class is now ${replaced.status})` : ''}
+            </div>
+          )}
           {cls.request_note && <div className="text-muted">Note from family: “{cls.request_note}”</div>}
           {cls.cancel_reason && <div className="text-muted">Cancel reason: {cls.cancel_reason}</div>}
         </div>
@@ -301,8 +373,8 @@ export function ClassDetailModal({ cls, onClose, onChanged, onEdit }) {
             <Field label="Homework"><textarea rows={2} className="input" value={homework} onChange={(e) => setHomework(e.target.value)} /></Field>
             <div className="flex flex-wrap gap-2">
               {cls.status === 'requested' && (
-                <button className="btn-success" disabled={busy} onClick={() => update({ status: 'scheduled' }, 'Request approved')}>
-                  <CheckCircle2 size={16} /> Approve request
+                <button className="btn-success" disabled={busy} onClick={approve}>
+                  <CheckCircle2 size={16} /> {cls.replaces_class ? 'Approve move' : 'Approve request'}
                 </button>
               )}
               {cls.status !== 'completed' && cls.status !== 'requested' && (
@@ -320,16 +392,39 @@ export function ClassDetailModal({ cls, onClose, onChanged, onEdit }) {
                   <UserX size={16} /> Missed
                 </button>
               )}
-              <button className="btn-ghost" onClick={() => { onClose(); onEdit?.(cls) }}>Edit</button>
+              {onEdit && <button className="btn-ghost" onClick={() => { onClose(); onEdit(cls) }}>Edit</button>}
             </div>
+            {['missed', 'cancelled'].includes(cls.status) && !cls.invoice_id && (
+              !charge ? (
+                <button className="btn-soft btn-sm" onClick={startCharge}><IndianRupee size={15} /> Charge for this class</button>
+              ) : (
+                <div className="space-y-2 rounded-xl border border-brand-100 p-3">
+                  <div className="text-sm font-bold">Charge for this class</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <input className="input col-span-2" value={charge.title} onChange={(e) => setCharge((c) => ({ ...c, title: e.target.value }))} />
+                    <input className="input" type="number" min="1" value={charge.amount} placeholder="₹" onChange={(e) => setCharge((c) => ({ ...c, amount: e.target.value }))} />
+                  </div>
+                  <p className="text-xs text-muted">Full or part of the fee, e.g. half for a late cancellation. It shows on the family’s bills.</p>
+                  <div className="flex gap-2">
+                    <button className="btn-primary btn-sm" disabled={busy || !(Number(charge.amount) > 0)} onClick={saveCharge}>{busy && <Spinner />} Add charge</button>
+                    <button className="btn-ghost btn-sm" onClick={() => setCharge(null)}>Cancel</button>
+                  </div>
+                </div>
+              )
+            )}
           </>
         ) : (
-          (cls.topic || cls.homework) && (
-            <div className="space-y-2 text-sm">
-              {cls.topic && <div><div className="label">Topic covered</div>{cls.topic}</div>}
-              {cls.homework && <div className="rounded-xl bg-sun-100 p-3"><div className="label text-sun-600">Homework</div>{cls.homework}</div>}
-            </div>
-          )
+          <>
+            {(cls.topic || cls.homework) && (
+              <div className="space-y-2 text-sm">
+                {cls.topic && <div><div className="label">Topic covered</div>{cls.topic}</div>}
+                {cls.homework && <div className="rounded-xl bg-sun-100 p-3"><div className="label text-sun-600">Homework</div>{cls.homework}</div>}
+              </div>
+            )}
+            {cls.status === 'scheduled' && future && (
+              <button className="btn-soft btn-sm" onClick={() => setMoving(true)}><CalendarClock size={15} /> Ask to change the time</button>
+            )}
+          </>
         )}
 
         {upcoming && (
@@ -344,6 +439,12 @@ export function ClassDetailModal({ cls, onClose, onChanged, onEdit }) {
                   <p className="text-xs text-muted">Online cancellation needs {settings.cancel_notice_hours} hours’ notice.</p>
                 )}
                 <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (optional)" />
+                {isAdmin && cls.status === 'scheduled' && (
+                  <label className="flex items-center gap-2 text-sm font-semibold">
+                    <input type="checkbox" className="h-4 w-4 accent-brand-600" checked={reopen} onChange={(e) => setReopen(e.target.checked)} />
+                    Let families book this time again (if it was a booked slot)
+                  </label>
+                )}
                 <div className="flex gap-2">
                   <button className="btn-danger" disabled={busy} onClick={cancel}>{busy && <Spinner />} Yes, cancel</button>
                   <button className="btn-ghost" onClick={() => setConfirmCancel(false)}>Keep it</button>
@@ -369,38 +470,51 @@ export function ClassDetailModal({ cls, onClose, onChanged, onEdit }) {
 // ----------------------------------------------------------------------
 // Families: request a custom time
 // ----------------------------------------------------------------------
-export function RequestModal({ open, onClose, onSaved, student, defaultDate }) {
+// replaces = a booked class the family wants moved (the teacher approves; the old one is then cancelled)
+export function RequestModal({ open, onClose, onSaved, student, defaultDate, replaces }) {
   const { settings } = useAuth()
   const [form, setForm] = useState({})
   const [run, busy] = useAction()
   useEffect(() => {
     if (!open) return
+    if (replaces) {
+      const d = new Date(replaces.start_at); d.setDate(d.getDate() + 1)
+      setForm({ start: toLocalInput(d), minutes: Math.round(hoursOf(replaces) * 60), mode: replaces.mode, note: '' })
+      return
+    }
     const d = new Date(defaultDate || Date.now())
     if (d < new Date()) d.setDate(new Date().getDate() + 1)
     d.setHours(17, 0, 0, 0)
     setForm({ start: toLocalInput(d), minutes: settings?.default_class_minutes || 60, mode: student?.default_mode || 'home', note: '' })
-  }, [open, defaultDate, student, settings])
+  }, [open, defaultDate, student, settings, replaces])
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
+  const durations = [...new Set([30, 45, 60, 75, 90, 120, 150, Number(form.minutes) || 60])].sort((a, b) => a - b)
   async function save() {
     const s = new Date(form.start)
-    const ok = await run(() => supabase.rpc('request_class', {
-      p_student: student.id, p_start: s.toISOString(), p_end: addMinutes(s, Number(form.minutes) || 60).toISOString(), p_mode: form.mode, p_note: form.note || null,
-    }), 'Request sent! The teacher will confirm it.')
+    const e = addMinutes(s, Number(form.minutes) || 60)
+    const ok = await run(() => replaces
+      ? supabase.rpc('request_reschedule', { p_class: replaces.id, p_start: s.toISOString(), p_end: e.toISOString(), p_note: form.note || null })
+      : supabase.rpc('request_class', { p_student: student.id, p_start: s.toISOString(), p_end: e.toISOString(), p_mode: form.mode, p_note: form.note || null }),
+    replaces ? 'Asked to move the class. The teacher will confirm.' : 'Request sent! The teacher will confirm it.')
     if (ok) { onSaved?.(); onClose() }
   }
   return (
-    <Modal open={open} onClose={onClose} title="Request a class time"
+    <Modal open={open} onClose={onClose} title={replaces ? 'Ask to change the time' : 'Request a class time'}
       footer={<><button className="btn-ghost" onClick={onClose}>Close</button><button className="btn-primary" disabled={busy} onClick={save}>{busy && <Spinner />} Send request</button></>}>
-      <p className="mb-3 text-sm text-muted">Can’t find a suitable open slot? Suggest a time for <b>{student?.full_name}</b> and the teacher will confirm.</p>
+      <p className="mb-3 text-sm text-muted">
+        {replaces
+          ? <>Suggest a new time for the class on <b>{fmtDay(replaces.start_at)} · {fmtRange(replaces.start_at, replaces.end_at)}</b>. It stays booked until the teacher approves the new time.</>
+          : <>Can’t find a suitable open slot? Suggest a time for <b>{student?.full_name}</b> and the teacher will confirm.</>}
+      </p>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Preferred time" className="col-span-2"><input type="datetime-local" className="input" value={form.start || ''} onChange={set('start')} /></Field>
+        <Field label={replaces ? 'New time' : 'Preferred time'} className="col-span-2"><input type="datetime-local" className="input" value={form.start || ''} onChange={set('start')} /></Field>
         <Field label="Duration">
           <select className="input" value={form.minutes} onChange={set('minutes')}>
-            {[45, 60, 90, 120].map((m) => <option key={m} value={m}>{m} min</option>)}
+            {durations.map((m) => <option key={m} value={m}>{m} min</option>)}
           </select>
         </Field>
         <Field label="Where">
-          <select className="input" value={form.mode} onChange={set('mode')}>
+          <select className="input" value={form.mode} onChange={set('mode')} disabled={!!replaces}>
             <option value="home">Home visit</option>
             <option value="online">Online</option>
           </select>

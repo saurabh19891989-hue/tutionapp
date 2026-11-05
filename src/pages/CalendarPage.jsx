@@ -88,7 +88,10 @@ export default function CalendarPage() {
                           </div>
                         </div>
                         {isAdmin ? (
-                          <button className="rounded-lg p-1.5 text-mint-700 hover:bg-white" disabled={busy} onClick={() => deleteSlot(s.id)} aria-label="Remove slot"><Trash2 size={16} /></button>
+                          <div className="flex shrink-0 items-center gap-1">
+                            <button className="btn-soft btn-sm" onClick={() => setBooking(s)} title="Book this slot for a student (e.g. when a parent calls)">Book for…</button>
+                            <button className="rounded-lg p-1.5 text-mint-700 hover:bg-white" disabled={busy} onClick={() => deleteSlot(s.id)} aria-label="Remove slot"><Trash2 size={16} /></button>
+                          </div>
                         ) : (
                           <button className="btn-success btn-sm" onClick={() => setBooking(s)}>Book</button>
                         )}
@@ -126,6 +129,7 @@ export default function CalendarPage() {
           <ClassFormModal open={!!editing} initial={editing?.id ? editing : null} defaultDate={selected} students={students}
             onClose={() => setEditing(null)} onSaved={load} />
           <SlotsModal open={slotsOpen} defaultDate={selected} onClose={() => setSlotsOpen(false)} onSaved={load} />
+          <BookModal slot={booking} students={students} onClose={() => setBooking(null)} onBooked={load} />
         </>
       )}
       {!isAdmin && (
@@ -138,28 +142,46 @@ export default function CalendarPage() {
   )
 }
 
-function BookModal({ slot, student, onClose, onBooked }) {
+// Families book for their student; the teacher picks any student (notice rules don't apply to the teacher)
+function BookModal({ slot, student: familyStudent, students, onClose, onBooked }) {
+  const [studentId, setStudentId] = useState('')
   const [mode, setMode] = useState('home')
   const [note, setNote] = useState('')
   const [run, busy] = useAction()
+  const student = familyStudent || students?.find((s) => s.id === studentId)
   useEffect(() => {
-    if (slot) { setMode(slot.mode === 'either' ? student?.default_mode || 'home' : slot.mode); setNote('') }
-  }, [slot, student])
+    if (!slot) return
+    const first = familyStudent || students?.[0]
+    setStudentId(first?.id || '')
+    setMode(slot.mode === 'either' ? first?.default_mode || 'home' : slot.mode); setNote('')
+  }, [slot, familyStudent, students])
   if (!slot) return null
   const book = async () => {
-    const ok = await run(() => supabase.rpc('book_slot', { p_slot: slot.id, p_student: student.id, p_mode: mode, p_note: note || null }), 'Booked! See you in class 🎉')
+    const ok = await run(() => supabase.rpc('book_slot', { p_slot: slot.id, p_student: student.id, p_mode: mode, p_note: note || null }),
+      familyStudent ? 'Booked! See you in class 🎉' : `Booked for ${student.full_name}`)
     if (ok) { onBooked(); onClose() }
     else onBooked()
   }
   return (
-    <Modal open onClose={onClose} title="Confirm booking"
-      footer={<><button className="btn-ghost" onClick={onClose}>Close</button><button className="btn-success" disabled={busy} onClick={book}>{busy && <Spinner />} Book this slot</button></>}>
+    <Modal open onClose={onClose} title={familyStudent ? 'Confirm booking' : 'Book this slot for a student'}
+      footer={<><button className="btn-ghost" onClick={onClose}>Close</button><button className="btn-success" disabled={busy || !student} onClick={book}>{busy && <Spinner />} Book this slot</button></>}>
       <div className="space-y-3">
         <div className="rounded-xl bg-mint-100 p-3">
           <div className="font-extrabold text-mint-700">{fmtDay(slot.start_at)}</div>
           <div className="text-sm font-bold text-mint-700">{fmtRange(slot.start_at, slot.end_at)}</div>
-          <div className="mt-1 text-sm">for <b>{student?.full_name}</b></div>
+          {familyStudent && <div className="mt-1 text-sm">for <b>{familyStudent.full_name}</b></div>}
         </div>
+        {!familyStudent && (
+          <Field label="Student">
+            <select className="input" value={studentId} onChange={(e) => {
+              const s = students.find((x) => x.id === e.target.value)
+              setStudentId(e.target.value)
+              if (slot.mode === 'either' && s) setMode(s.default_mode)
+            }}>
+              {students.map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+            </select>
+          </Field>
+        )}
         {slot.mode === 'either' ? (
           <div>
             <div className="label">Where</div>
@@ -175,7 +197,7 @@ function BookModal({ slot, student, onClose, onBooked }) {
         ) : (
           <div className="flex items-center gap-2 text-sm font-bold"><ModeIcon mode={slot.mode} /> {slot.mode === 'home' ? 'Home visit' : 'Online class'}</div>
         )}
-        <Field label="Note for the teacher (optional)">
+        <Field label={familyStudent ? 'Note for the teacher (optional)' : 'Note (optional)'}>
           <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Chapter 5 doubts" />
         </Field>
       </div>

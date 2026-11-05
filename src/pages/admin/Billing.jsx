@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ReceiptText, IndianRupee, Layers, MessageCircle, Ban, Trash2, Wallet } from 'lucide-react'
+import { ReceiptText, IndianRupee, Layers, MessageCircle, Ban, Trash2, Wallet, Pencil, SlidersHorizontal } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../lib/auth'
 import { Badge, Card, Empty, Field, Loading, Modal, PageHeader, Spinner, Stat, Tabs, useAction, useToast } from '../../components/ui'
@@ -13,20 +13,28 @@ const lastMonthRange = () => {
   return [ymd(s), ymd(e)]
 }
 
-export function RecordPaymentModal({ open, onClose, studentId, onSaved }) {
+// Record a payment, or edit one (payment = existing row: amount, date, method, bill, status can all be corrected)
+export function RecordPaymentModal({ open, onClose, studentId, onSaved, payment }) {
   const { students } = useAuth()
+  const editing = !!payment
   const [f, setF] = useState({})
   const [invoices, setInvoices] = useState([])
   const [run, busy] = useAction()
   useEffect(() => {
-    if (open) setF({ student_id: studentId || students[0]?.id || '', amount: '', method: 'cash', reference: '', paid_on: ymd(new Date()), invoice_id: '', note: '' })
-  }, [open, studentId, students])
+    if (!open) return
+    if (payment) {
+      setF({ student_id: payment.student_id, amount: String(payment.amount), method: payment.method, reference: payment.reference || '',
+        paid_on: payment.paid_on, invoice_id: payment.invoice_id || '', note: payment.note || '', status: payment.status })
+    } else {
+      setF({ student_id: studentId || students[0]?.id || '', amount: '', method: 'cash', reference: '', paid_on: ymd(new Date()), invoice_id: '', note: '', status: 'confirmed' })
+    }
+  }, [open, studentId, students, payment])
   const left = (i) => Number(i.amount) - Number(i.paid_amount)
   useEffect(() => {
     if (!open || !f.student_id) return
     supabase.from('invoice_summary').select('*').eq('student_id', f.student_id).eq('status', 'issued').order('created_at', { ascending: true })
       .then(({ data }) => {
-        const unpaid = (data || []).filter((i) => left(i) > 0)
+        const unpaid = (data || []).filter((i) => left(i) > 0 || i.id === payment?.invoice_id)
         setInvoices(unpaid)
         // default to the oldest unpaid bill and what's left on it, unless the teacher already chose
         const first = unpaid[0]
@@ -40,18 +48,22 @@ export function RecordPaymentModal({ open, onClose, studentId, onSaved }) {
     setF((x) => ({ ...x, invoice_id: e.target.value, amount: x.amount || (inv ? String(left(inv)) : '') }))
   }
   async function save() {
-    const ok = await run(() => supabase.from('payments').insert({
-      student_id: f.student_id, amount: Number(f.amount), method: f.method, reference: f.reference || null,
-      paid_on: f.paid_on, invoice_id: f.invoice_id || null, note: f.note || null, status: 'confirmed',
-    }), 'Payment recorded')
+    const row = {
+      amount: Number(f.amount), method: f.method, reference: f.reference || null,
+      paid_on: f.paid_on, invoice_id: f.invoice_id || null, note: f.note || null, status: f.status || 'confirmed',
+    }
+    const ok = await run(() => editing
+      ? supabase.from('payments').update(row).eq('id', payment.id)
+      : supabase.from('payments').insert({ ...row, student_id: f.student_id }), editing ? 'Payment updated' : 'Payment recorded')
     if (ok) { onSaved?.(); onClose() }
   }
   return (
-    <Modal open={open} onClose={onClose} title="Record a payment"
+    <Modal open={open} onClose={onClose} title={editing ? 'Edit payment' : 'Record a payment'}
       footer={<><button className="btn-ghost" onClick={onClose}>Close</button><button className="btn-success" disabled={busy || !(Number(f.amount) > 0) || !f.student_id} onClick={save}>{busy && <Spinner />} Save payment</button></>}>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Student" className="col-span-2">
-          <select className="input" value={f.student_id} onChange={pickStudent} disabled={!!studentId}>
+          <select className="input" value={f.student_id} onChange={pickStudent} disabled={!!studentId || editing}>
+            {editing && !students.some((s) => s.id === f.student_id) && <option value={f.student_id}>{payment.students?.full_name || 'Student'}</option>}
             {students.map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
           </select>
         </Field>
@@ -70,6 +82,85 @@ export function RecordPaymentModal({ open, onClose, studentId, onSaved }) {
           </select>
         </Field>
         <Field label="Note" className="col-span-2"><input className="input" value={f.note} onChange={set('note')} placeholder="e.g. advance for 8 classes" /></Field>
+        {editing && (
+          <Field label="Status" className="col-span-2">
+            <select className="input" value={f.status} onChange={set('status')}>
+              <option value="confirmed">Received</option><option value="pending">Awaiting check</option><option value="rejected">Not received</option>
+            </select>
+          </Field>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
+// Extra charge (books, travel, late fee…) or discount / waiver — shows on the family's bills.
+export function AdjustmentModal({ open, onClose, studentId, onSaved }) {
+  const { students } = useAuth()
+  const [f, setF] = useState({})
+  const [run, busy] = useAction()
+  useEffect(() => {
+    if (open) setF({ student_id: studentId || students[0]?.id || '', type: 'charge', title: '', amount: '', date: ymd(new Date()) })
+  }, [open, studentId, students])
+  const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }))
+  const discount = f.type === 'discount'
+  async function save() {
+    const due = new Date(f.date); due.setDate(due.getDate() + 7)
+    const ok = await run(() => supabase.from('invoices').insert({
+      student_id: f.student_id, title: f.title.trim() || (discount ? 'Discount' : 'Extra charge'),
+      amount: (discount ? -1 : 1) * Number(f.amount), period_start: f.date, period_end: f.date,
+      due_date: discount ? null : ymd(due), kind: 'adjustment',
+    }), discount ? 'Discount added' : 'Charge added')
+    if (ok) { onSaved?.(); onClose() }
+  }
+  return (
+    <Modal open={open} onClose={onClose} title="Charge or discount"
+      footer={<><button className="btn-ghost" onClick={onClose}>Close</button><button className="btn-primary" disabled={busy || !(Number(f.amount) > 0) || !f.student_id} onClick={save}>{busy && <Spinner />} Add</button></>}>
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-2">
+          {[['charge', 'Extra charge', 'Books, travel, late fee…'], ['discount', 'Discount / waiver', 'Reduces what they owe']].map(([v, l, h]) => (
+            <button key={v} onClick={() => setF((x) => ({ ...x, type: v }))}
+              className={`rounded-xl border-2 px-3 py-2 text-left ${f.type === v ? 'border-brand-500 bg-brand-50' : 'border-brand-100'}`}>
+              <div className="text-sm font-extrabold">{l}</div><div className="text-xs text-muted">{h}</div>
+            </button>
+          ))}
+        </div>
+        <Field label="Student">
+          <select className="input" value={f.student_id} onChange={set('student_id')} disabled={!!studentId}>
+            {students.map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+          </select>
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Amount (₹)"><input type="number" min="1" className="input" value={f.amount} onChange={set('amount')} /></Field>
+          <Field label="Date"><input type="date" className="input" value={f.date || ''} onChange={set('date')} /></Field>
+          <Field label="Description" className="col-span-2">
+            <input className="input" value={f.title} onChange={set('title')} placeholder={discount ? 'e.g. Diwali discount / sibling discount' : 'e.g. Practice book / extra travel'} />
+          </Field>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// Correct a bill by hand (title, amount, due date). Negative amount = discount.
+function EditBillModal({ bill, onClose, onSaved }) {
+  const [f, setF] = useState({})
+  const [run, busy] = useAction()
+  useEffect(() => { if (bill) setF({ title: bill.title, amount: String(bill.amount), due_date: bill.due_date || '' }) }, [bill])
+  if (!bill) return null
+  const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }))
+  const save = async () => {
+    const ok = await run(() => supabase.from('invoices').update({ title: f.title.trim() || bill.title, amount: Number(f.amount), due_date: f.due_date || null }).eq('id', bill.id), 'Bill updated')
+    if (ok) { onSaved(); onClose() }
+  }
+  return (
+    <Modal open onClose={onClose} title={`Edit bill #${bill.invoice_no}`}
+      footer={<><button className="btn-ghost" onClick={onClose}>Close</button><button className="btn-primary" disabled={busy || !Number(f.amount)} onClick={save}>{busy && <Spinner />} Save</button></>}>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="For" className="col-span-2"><input className="input" value={f.title || ''} onChange={set('title')} /></Field>
+        <Field label="Amount (₹)" hint="Negative = discount"><input type="number" className="input" value={f.amount || ''} onChange={set('amount')} /></Field>
+        <Field label="Due date"><input type="date" className="input" value={f.due_date || ''} onChange={set('due_date')} /></Field>
+        <p className="col-span-2 text-xs text-muted">{bill.student_name} · already paid {money(bill.paid_amount)}</p>
       </div>
     </Modal>
   )
@@ -159,6 +250,9 @@ export default function Billing() {
   const [data, setData] = useState(null)
   const [payFor, setPayFor] = useState(null) // studentId | ''
   const [invFor, setInvFor] = useState(null)
+  const [adjustFor, setAdjustFor] = useState(null) // studentId | ''
+  const [editPay, setEditPay] = useState(null)
+  const [editBill, setEditBill] = useState(null)
   const [run, busy] = useAction()
 
   const load = useCallback(async () => {
@@ -190,6 +284,7 @@ export default function Billing() {
       <PageHeader title="Billing" subtitle="Bills, payments and who owes what."
         actions={<>
           <button className="btn-soft" onClick={() => setInvFor('')}><Layers size={17} /> Create bills</button>
+          <button className="btn-soft" onClick={() => setAdjustFor('')}><SlidersHorizontal size={17} /> Charge / discount</button>
           <button className="btn-success" onClick={() => setPayFor('')}><IndianRupee size={17} /> Record payment</button>
         </>} />
 
@@ -254,7 +349,10 @@ export default function Billing() {
                         <td className="text-right font-extrabold">{money(i.amount)}{Number(i.paid_amount) > 0 && invoiceState(i) !== 'paid' && <div className="text-xs font-semibold text-muted">paid {money(i.paid_amount)}</div>}</td>
                         <td><Badge status={invoiceState(i)} /></td>
                         <td className="whitespace-nowrap text-muted">{i.due_date ? fmtDate(i.due_date) : '—'}</td>
-                        <td className="text-right">
+                        <td className="whitespace-nowrap text-right">
+                          {i.status !== 'void' && (
+                            <button className="btn-ghost btn-sm" title="Edit bill" onClick={() => setEditBill(i)}><Pencil size={15} /></button>
+                          )}
                           {i.status !== 'void' && (
                             <button className="btn-ghost btn-sm" title="Void bill (classes become unbilled again)" disabled={busy}
                               onClick={async () => {
@@ -289,7 +387,8 @@ export default function Billing() {
                         <td className="uppercase text-muted">{p.method}</td>
                         <td className="text-muted">{[p.reference, p.note].filter(Boolean).join(' · ') || '—'}</td>
                         <td><Badge status={p.status} /></td>
-                        <td className="text-right">
+                        <td className="whitespace-nowrap text-right">
+                          <button className="btn-ghost btn-sm" title="Edit payment" onClick={() => setEditPay(p)}><Pencil size={15} /></button>
                           <button className="btn-ghost btn-sm" disabled={busy} title="Delete"
                             onClick={async () => { if (confirm('Delete this payment record?') && await run(() => supabase.from('payments').delete().eq('id', p.id), 'Payment deleted')) load() }}>
                             <Trash2 size={15} />
@@ -306,7 +405,10 @@ export default function Billing() {
       )}
 
       <RecordPaymentModal open={payFor !== null} studentId={payFor || undefined} onClose={() => setPayFor(null)} onSaved={load} />
+      <RecordPaymentModal open={!!editPay} payment={editPay} onClose={() => setEditPay(null)} onSaved={load} />
       <InvoiceModal open={invFor !== null} studentId={invFor || undefined} onClose={() => setInvFor(null)} onSaved={load} />
+      <AdjustmentModal open={adjustFor !== null} studentId={adjustFor || undefined} onClose={() => setAdjustFor(null)} onSaved={load} />
+      <EditBillModal bill={editBill} onClose={() => setEditBill(null)} onSaved={load} />
     </>
   )
 }

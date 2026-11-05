@@ -9,10 +9,35 @@ import { balanceDue, classAmount, fmtDate, hoursOf, money } from '../../lib/form
 
 export function usePaymentActions(onDone) {
   const [run, busy] = useAction()
-  const setStatus = async (p, status) => {
-    if (await run(() => supabase.from('payments').update({ status }).eq('id', p.id), status === 'confirmed' ? `${money(p.amount)} confirmed` : 'Marked as not received')) onDone()
+  // amount: confirm a different amount than the family reported (e.g. only part arrived)
+  const setStatus = async (p, status, amount) => {
+    const patch = { status }
+    if (status === 'confirmed' && amount && Number(amount) !== Number(p.amount)) patch.amount = Number(amount)
+    if (await run(() => supabase.from('payments').update(patch).eq('id', p.id), status === 'confirmed' ? `${money(patch.amount ?? p.amount)} confirmed` : 'Marked as not received')) onDone()
   }
   return [setStatus, busy]
+}
+
+function PendingRow({ p, setStatus, busy }) {
+  const [editing, setEditing] = useState(false)
+  const [amount, setAmount] = useState(String(p.amount))
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-sun-400/40 bg-sun-100/50 p-3">
+      <div className="min-w-0">
+        <div className="font-extrabold">{money(p.amount)} <span className="font-semibold text-muted">· {p.students?.full_name}</span></div>
+        <div className="text-xs text-muted">{fmtDate(p.paid_on)} · {p.method.toUpperCase()}{p.reference ? ` · Ref ${p.reference}` : ''}</div>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {editing ? (
+          <input className="input w-28 py-1.5" type="number" min="1" value={amount} onChange={(e) => setAmount(e.target.value)} aria-label="Amount received" />
+        ) : (
+          <button className="btn-ghost btn-sm" onClick={() => setEditing(true)} title="Received a different amount?">Change amount</button>
+        )}
+        <button className="btn-success btn-sm" disabled={busy || !(Number(amount) > 0)} onClick={() => setStatus(p, 'confirmed', amount)}><CheckCircle2 size={14} /> Received</button>
+        <button className="btn-danger btn-sm" disabled={busy} onClick={() => setStatus(p, 'rejected')}><XCircle size={14} /> No</button>
+      </div>
+    </div>
+  )
 }
 
 export function PendingPayments({ rows, onChanged }) {
@@ -20,18 +45,7 @@ export function PendingPayments({ rows, onChanged }) {
   if (!rows.length) return <Empty icon={BadgeIndianRupee} title="Nothing to verify" text="When a parent reports a payment, it shows up here." />
   return (
     <div className="space-y-2">
-      {rows.map((p) => (
-        <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-sun-400/40 bg-sun-100/50 p-3">
-          <div className="min-w-0">
-            <div className="font-extrabold">{money(p.amount)} <span className="font-semibold text-muted">· {p.students?.full_name}</span></div>
-            <div className="text-xs text-muted">{fmtDate(p.paid_on)} · {p.method.toUpperCase()}{p.reference ? ` · Ref ${p.reference}` : ''}</div>
-          </div>
-          <div className="flex gap-1.5">
-            <button className="btn-success btn-sm" disabled={busy} onClick={() => setStatus(p, 'confirmed')}><CheckCircle2 size={14} /> Received</button>
-            <button className="btn-danger btn-sm" disabled={busy} onClick={() => setStatus(p, 'rejected')}><XCircle size={14} /> No</button>
-          </div>
-        </div>
-      ))}
+      {rows.map((p) => <PendingRow key={p.id} p={p} setStatus={setStatus} busy={busy} />)}
     </div>
   )
 }
