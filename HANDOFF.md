@@ -12,19 +12,21 @@ _Last updated: 5 Nov 2026. Written for **you and the Claude session on your own 
 
 ## 1. Where things stand
 
-**Built, tested and pushed.** Repo: <https://github.com/saurabh19891989-hue/tutionapp>, branch `claude/nice-pasteur-vusfzl`. This branch is currently the repo's **default branch**: the repo was empty, so the first push became the default. There is no `main` yet.
+**LIVE (5 Nov 2026): <https://shikshagram.dpdns.org/>** (also <https://saurabh19891989-hue.github.io/tutionapp/>). Repo: <https://github.com/saurabh19891989-hue/tutionapp>, default branch `main`.
 
 | Area | Status |
 |---|---|
 | Web app (React + Vite + Tailwind, static) | ✅ Done. Production build passes. |
-| Database schema, security rules, functions (`supabase/schema.sql`) | ✅ Done. Tested on Postgres + real Supabase Auth (GoTrue) + PostgREST locally. |
-| End-to-end browser tests (teacher + parent flows, desktop + phone) | ✅ Passed with no console errors (details in §6) |
-| Supabase **cloud** project | ❌ Not created yet. Must be under **saurabh19891989@gmail.com** (the Supabase connector in the cloud session was tied to a different org, "Xircl", so it wasn't used). |
-| Supabase Auth settings (email templates, URLs, SMTP) | ❌ To do |
-| Keys wired into the app | ❌ To do (`public/config.js` still has placeholders, so the site shows a "connect the database" screen) |
-| GitHub Pages | ⚠️ Workflow is in place. [Run #1](https://github.com/saurabh19891989-hue/tutionapp/actions/runs/41953283719): **build ✅**, deploy ❌ only because Pages isn't enabled yet (§3.2) |
-| Free domain (DigitalPlat) | ❌ To do (needs your identity/login) |
-| Copy in your local Downloads folder | ❌ To do (§3.1) |
+| Database schema, security rules, functions (`supabase/schema.sql`) | ✅ Applied to the cloud project. 9 tables + 2 views, RLS on every table, 19 policies. |
+| Supabase **cloud** project | ✅ `shikshagram`, ref `bobkfmggdqqegiobgnlo`, Mumbai, Free plan, org "ShikshaGram" owned by **vivek787r@gmail.com**. (saurabh19891989@gmail.com already had 2 active free projects in the Xircl org, the free limit.) |
+| Supabase Auth | ✅ Confirm email ON, 6-digit OTP, ShikshaGram templates for sign-in code + confirm sign-up, Site URL = custom domain, redirects = custom domain, github.io, localhost:5173. Rate limits: 60 emails/h, 45 s between emails per user. |
+| SMTP | ✅ Gmail `smtp.gmail.com:587` as vivek787r@gmail.com (app password, 500/day). Codes land in Inbox. |
+| Keys wired into the app | ✅ `public/config.js` (URL + `sb_publishable_…` key; no secret key anywhere). Keep-alive reads the same file. |
+| Admins | ✅ saurabh19891989@gmail.com, vivek787r@gmail.com (`app_settings.admin_emails`) |
+| GitHub Pages | ✅ Deploys from `main` via Actions. Custom domain set (`public/CNAME`). Tick **Enforce HTTPS** once GitHub has issued the certificate. |
+| Domain | ✅ `shikshagram.dpdns.org`: DigitalPlat (Vivek's account, verified via GitHub, renews free within 120 days of 5 Nov 2027) → nameservers `aragorn`/`jessica.ns.cloudflare.com` → Cloudflare Free (vivek787r@gmail.com), records in `docs/dns/shikshagram.dpdns.org.zone`, all **DNS only**. |
+| Admin login on the live site | ✅ Email code → teacher panel. |
+| Local copy | ✅ `C:\Users\saura\Downloads\Sikshagram` (a git clone, so `git pull` keeps it current) |
 
 ### Decisions already made (don't re-ask)
 - **Brand:** "ShikshaGram Home Classes" (from the paper register), teacher **Vivek Choudhary**. Light blue/yellow/mint education theme, Nunito font, graduation-cap logo.
@@ -43,7 +45,10 @@ _Last updated: 5 Nov 2026. Written for **you and the Claude session on your own 
 
 ---
 
-## 3. Open tasks (in order)
+## 3. Setup tasks: all done except where noted
+
+> Sections 3.1–3.7 are kept as a record of how it was set up. **Still open:** tick *Enforce HTTPS* in repo Settings → Pages once the certificate exists, and everything in 3.8 (real settings and students).
+
 
 ### 3.1 Get the code locally, including a copy in Downloads
 ```bash
